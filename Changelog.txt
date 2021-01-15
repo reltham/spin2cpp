@@ -1,8 +1,74 @@
+Version 5.0.7
+- Added code to support _ret_ in inline assembly
+- Fixed rdlong x, ptra[##BIG] instruction form
+- Fixed some bugs in cog_run
+- Fixed bit references in arrays like A[x].[y]
+- Fixed uhex() bug where it only output 1 bit
+- Fixed a serious off-by-one error in garbage collection code
+
+Version 5.0.6
+- Added cog_* functions from libsimpletools
+- Added get_directions() and get_outputs() functions from simpletools
+- Added getms() in Spin2
+- Documented _pinstart() function for C
+- Fixed an off-by-one in the BASIC INSERT$ function.
+- Fixed errors in declarations of C modf() and frexp() functions.
+- Fixed read() on terminal to break on newline if applicable
+- Improved error messages for type mismatches.
+- Made libsimpletext text read use _rxraw() to avoid echo.
+
+Version 5.0.5
+- Added the EVENT_* symbols for Spin2
+- Added warnings for use of RES memory
+- Fixed lseek with SEEK_END on 9p file system
+- Fixed error reporting for bad rdxxx/wrxxx pointers
+- Improved checks for language when no explicit extension is given in object names
+- Updated BASIC documentation to include some built-ins that weren't documented
+
+Version 5.0.4
+- Added protection for multiple cogs calling memory allocation
+- Added NEWCOG constant for COGSPIN
+- Fixed a serious peephole bug in TEST/AND merging
+- Fixed printing of NULL strings in BASIC
+- Fixed error for wrong variable in BASIC NEXT
+
+Version 5.0.3
+- Added new reserved word `private` in BASIC (not used yet)
+- Changed Makefile to accept YACCVER=bison2 or YACCVER=bison3
+- Fixed off-by-one error in fs9p code
+- Fixed an off-by-one error in BASIC numeric formatting
+- Fixed a bad calculation in p2_clock.h
+- Fixed a problem with assignment operators like += in BASIC
+
+Version 5.0.2
+- Added "noinline" attribute
+- Added a warning for some non-terminating loops
+- Fixed a compiler warning in ff.cc
+- Fixed a bug with returning structures in C
+- Fixed an optimizer bug with trying to replace ptra++
+- Fixed an overly aggressive loop reduction optimization
+- Made BASIC open command use "throw" to report errors
+
+Version 5.0.1
+- Added getms() and getus() for BASIC
+- Allow ptra++ in BASIC assembly
+- Allow use of constants from other objects in inline assembly
+- Allow access to array member variables in Spin
+- Convert "ret" in inline assembly to a jump to the end of it
+- Fixed a C parser crash
+- Fixed a problem with padding C structs
+- Fixed a bug parsing strings in C __pasm
+- Provided separate namespace for labels in C
+- Removed support for Rev A silicon (it was not working anyway)
+
 Version 5.0.0
 - Renamed "fastspin" to "flexspin"
+- Added "flexcc" compiler front end
 - Added --version flag to fastspin
-- Fixed BASIC ^ operator used with --fixedreal
+- Added asin(), acos(), atan(), atan2() to BASIC
+- Fixed BASIC ^ operator when used with --fixedreal
 - Made sin() and cos() work with --fixedreal
+- New atan2() implementation using the CORDIC on P2
 
 Version 4.5.0
 - Added a warning for C functions with mismatched parameters (it used to silently accept this)

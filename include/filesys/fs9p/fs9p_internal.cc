@@ -109,7 +109,7 @@ int fs_init(sendrecv_func fn)
     msize = FETCH4(ptr+3);
 
     s = FETCH2(ptr+7);
-    if (s != 6 || 0 != strncmp(&ptr[9], "9P2000")) {
+    if (s != 6 || 0 != strncmp(&ptr[9], "9P2000", 6)) {
 #ifdef _DEBUG      
         __builtin_printf("Bad version response from host: s=%d ver=%s\n", s, &ptr[9]);
 #endif	
@@ -339,7 +339,10 @@ int fs_read(fs9_file *f, uint8_t *buf, int count)
         ptr = doPut4(ptr, (uint32_t)f);
         ptr = doPut4(ptr, f->offlo);
         ptr = doPut4(ptr, f->offhi);
-        left = maxlen - (ptr + 4 - txbuf);
+        left = (maxlen - (ptr + 4 - txbuf)) - 1;
+#ifdef _DEBUG
+	__builtin_printf("  [ count=%d left=%d maxlen=%d ]\n", count, left, maxlen);
+#endif	
         if (count < left) {
             curcount = count;
         } else {
@@ -348,20 +351,32 @@ int fs_read(fs9_file *f, uint8_t *buf, int count)
         ptr = doPut4(ptr, curcount);
         r = (*sendRecv)(txbuf, ptr, maxlen);
         if (r < 0) {
+#ifdef _DEBUG
+	  __builtin_printf(" fs_read: sendrecv returned %d\n", r);
+#endif	  
 	    return -EIO;
 	}
         ptr = txbuf + 4;
         if (*ptr++ != r_read) {
+#ifdef _DEBUG
+	  __builtin_printf(" fs_read: bad response\n");
+#endif	  
             return -EIO;
         }
         ptr += 2; // skip tag
         r = FETCH4(ptr); ptr += 4;
         if (r < 0 || r > curcount) {
+#ifdef _DEBUG
+	  __builtin_printf(" fs_read: got %d\n", r);
+#endif	  
             return -EIO;
         }
         if (r == 0) {
-            // EOF reached
-            break;
+	  // EOF reached
+#ifdef _DEBUG
+	  __builtin_printf(" fs_read: EOF\n");
+#endif	  
+	  break;
         }
         memcpy(buf, ptr, r);
         buf += r;
@@ -373,6 +388,9 @@ int fs_read(fs9_file *f, uint8_t *buf, int count)
             f->offhi++;
         }
     }
+#ifdef _DEBUG
+    __builtin_printf(" fs_read: returning %d\n", totalread);
+#endif	  
     return totalread;
 }
 
@@ -394,7 +412,7 @@ int fs_write(fs9_file *f, const uint8_t *buf, int count)
         ptr = doPut4(ptr, (uint32_t)f);
         ptr = doPut4(ptr, f->offlo);
         ptr = doPut4(ptr, f->offhi);
-        left = maxlen - (ptr + 4 - txbuf);
+        left = (maxlen - (ptr + 4 - txbuf)) - 1;
         if (count < left) {
             curcount = count;
         } else {
@@ -467,6 +485,7 @@ int fs_fstat(fs9_file *f, struct stat *buf)
     memset(buf, 0, sizeof(struct stat));
     buf->st_nlink = 1;
     buf->st_size = flenlo;
+    //buf->st_sizeh = flenhi;
     buf->st_atime = atime;
     buf->st_mtime = mtime;
     buf->st_ino = ino;
@@ -685,8 +704,14 @@ static off_t v_lseek(vfs_file_t *fil, off_t offset, int whence)
         }
         f->offlo = tmp;
     } else {
-        // FIXME: should do a stat on the file and then seek accordingly
-        return _seterror(EINVAL);
+        // SEEK_END; do a stat on the file and seek accordingly
+        struct stat stbuf;
+	int r = fs_fstat(f, &stbuf);
+	if (r < 0) {
+	    return _seterror(EINVAL);
+	}
+	f->offlo = stbuf.st_size - offset;
+	f->offhi = 0;
     }
 #ifdef _DEBUG
     __builtin_printf("end=%d\n", f->offlo);
@@ -743,15 +768,18 @@ static int v_open(vfs_file_t *fil, const char *name, int flags)
   __builtin_printf("fs9: calling fs_open\n");
 #endif  
   r = fs_open(f, name, fs_flags);
+  if (r) {
+    free(f);
+#ifdef _DEBUG
+   __builtin_printf("fs_open(%s) returned error %d\n", name, r);
+#endif
+    return _seterror(-r);
+  }
 #ifdef _DEBUG
   __builtin_printf("fs_open(%s) returned %d, offset=%d\n", name, r, f->offlo);
   __builtin_printf("offset at %d, size at %d\n", offsetof(fs9_file, offlo), sizeof(fs9_file));
   __builtin_printf("default buffer size=%d\n", sizeof(struct _default_buffer));
 #endif  
-  if (r) {
-    free(f);
-    return _seterror(-r);
-  }
   fil->vfsdata = f;
   return 0;
 }

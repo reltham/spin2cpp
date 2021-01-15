@@ -147,7 +147,8 @@ Aliases spin2alias[] = {
     { "pinmode", "_pinmode" },
     
     { "getct", "_getcnt" },
-    { "getrnd", "_rnd" },
+    { "getms", "_getms" },
+    { "getrnd", "_getrnd" },
     { "getsec", "_getsec" },
     { "hubset", "_hubset" },
     
@@ -202,7 +203,9 @@ Aliases basicalias[] = {
     { "cpuwait", "_cogwait" },
     { "err", "_geterror" },
     { "getcnt",  "_getcnt" },
-    { "getrnd", "_rnd" },
+    { "getrnd", "_getrnd" },
+    { "getms", "_getms" },
+    { "getus", "_getus" },
     { "getsec", "_getsec" },
     { "len", "__builtin_strlen" },
     { "mount", "_mount" },
@@ -221,6 +224,10 @@ Aliases basicalias[] = {
     { "instrrev", "_instrrev" },
     
     /* math functions */
+    { "acos", "__builtin_acosf" },
+    { "asin", "__builtin_asinf" },
+    { "atan", "__builtin_atanf" },
+    { "atan2", "__builtin_atan2f" },
     { "cos", "__builtin_cosf" },
     { "exp", "__builtin_expf" },
     { "log", "__builtin_logf" },
@@ -1153,7 +1160,9 @@ ReplaceIdentifiers(AST **parent, const char *oldName, AST *newIdent)
         }
     } else {
         ReplaceIdentifiers(&item->left, oldName, newIdent);
-        ReplaceIdentifiers(&item->right, oldName, newIdent);
+        if (item->kind != AST_METHODREF) {
+            ReplaceIdentifiers(&item->right, oldName, newIdent);
+        }
     }
 }
 
@@ -1618,7 +1627,9 @@ DeclareMemberVariablesOfSize(Module *P, int basetypesize, int offset)
         }
         if (basetypesize == 0) {
             // round offset up to necessary alignment
-            if (!gl_p2) {
+            // If you change this, be sure to change code for aligning
+            // initializers, too!
+            if (1 /*!gl_p2*/) { /* FIXME: what about PACKED structs */
                 if (curtypesize == 2) {
                     offset = (offset + 1) & ~1;
                 } else if (curtypesize >= 4) {

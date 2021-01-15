@@ -4,7 +4,7 @@
  * See the file COPYING for terms of use.
  */
 
-/* %define api.prefix {basicyy} */
+%pure-parser
 
 %{
 #include <stdio.h>
@@ -14,6 +14,9 @@
 #include "frontends/common.h"
 #include "frontends/lexer.h"
 
+#define CGRAMYYSTYPE AST*
+#undef  YYSTYPE
+#define YYSTYPE CGRAMYYSTYPE
 #define IN_DAT 1
     
 /* special flag */
@@ -30,7 +33,6 @@
     extern AST *CommentedListHolder(AST *); // in spin.y
 
 #define YYERROR_VERBOSE 1
-#define YYSTYPE AST*
 
 extern int allow_type_names;
     
@@ -77,6 +79,19 @@ LengthenType(AST *type)
     }
     // otherwise make sure it is 4 bytes long
     return NewAST(type->kind, AstInteger(4), NULL);
+}
+
+static AST *
+LabelName(AST *x)
+{
+    const char *orig_name = GetUserIdentifierName(x);
+    char *new_name;
+
+    if (!orig_name) return x;
+    new_name = calloc(strlen(orig_name) + 8, 1);
+    strcpy(new_name, "label:");
+    strcat(new_name, orig_name);
+    return AstIdentifier(new_name);
 }
 
 static AST *
@@ -365,7 +380,7 @@ ProcessParamList(AST *list)
             }
             return NULL;
         }
-        if (entry->kind == AST_DECLARE_VAR) {
+        if (entry && entry->kind == AST_DECLARE_VAR) {
             type = entry->left;
             while (type->kind == AST_MODIFIER_CONST || type->kind == AST_MODIFIER_VOLATILE) {
                 type = type->left;
@@ -747,8 +762,6 @@ ConstructDefaultValue(AST *decl, AST *val)
 }
 
 %}
-
-%pure-parser
 
 %token C_IDENTIFIER "identifier"
 %token C_CONSTANT   "constant"
@@ -1746,7 +1759,7 @@ statement
 labeled_statement
 	: any_identifier ':' statement
             {
-                AST *label = NewAST(AST_LABEL, $1, NULL);
+                AST *label = NewAST(AST_LABEL, LabelName($1), NULL);
                 $$ = NewAST(AST_STMTLIST, label,
                               NewAST(AST_STMTLIST, $3, NULL));
             }
@@ -2078,7 +2091,7 @@ for_declaration
 
 jump_statement
 	: C_GOTO any_identifier ';'
-            { $$ = NewCommentedAST(AST_GOTO, $2, NULL, $1); }
+            { $$ = NewCommentedAST(AST_GOTO, LabelName($2), NULL, $1); }
 	| C_CONTINUE ';'
             { $$ = NewCommentedAST(AST_CONTINUE, NULL, NULL, $1); }
 	| C_BREAK ';'
@@ -2087,6 +2100,8 @@ jump_statement
             { $$ = NewCommentedAST(AST_RETURN, NULL, NULL, $1); }
 	| C_RETURN expression ';'
             { $$ = NewCommentedAST(AST_RETURN, $2, NULL, $1); }
+	| C_THROW expression ';'
+            { $$ = NewCommentedAST(AST_THROW, $2, NULL, $1); }
 	;
 
 translation_unit

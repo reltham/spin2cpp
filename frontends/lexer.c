@@ -4,6 +4,7 @@
 //
 // Copyright (c) 2011-2020 Total Spectrum Software Inc.
 //
+#include <stdio.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
@@ -545,7 +546,7 @@ parseSpinIdentifier(LexStream *L, AST **ast_ptr, const char *prefix)
         }
     }
     c = lexgetc(L);
-    while (isIdentifierChar(c) || c == '`') {
+    while (isIdentifierChar(c) || c == '`' || (c == ':' && InDatBlock(L))) {
         if (c == '`') {
             c = lexgetc(L);
         } else if (forceLower) {
@@ -1621,6 +1622,7 @@ struct reservedword init_spin2_words[] = {
     
     { "addbits", SP_ADDBITS },
     { "addpins", SP_ADDPINS },
+    { "asmclk", SP_ASMCLK },
     { "bmask", SP_BMASK },
     { "cogspin", SP_COGINIT },
     { "debug", SP_DEBUG },
@@ -1705,6 +1707,7 @@ struct reservedword basic_keywords[] = {
   { "output", BAS_OUTPUT },
   { "pointer", BAS_POINTER },
   { "print", BAS_PRINT },
+  { "private", BAS_PRIVATE },
   { "program", BAS_PROGRAM },
   { "ptr", BAS_PTR },
   { "put", BAS_PUT },
@@ -1794,8 +1797,9 @@ struct reservedword c_keywords[] = {
   { "static", C_STATIC },
   { "struct", C_STRUCT },
   { "switch", C_SWITCH },
-  { "typedef", C_TYPEDEF },
   { "__this", C_THIS },
+  { "__throw", C_THROW },
+  { "typedef", C_TYPEDEF },
   { "union", C_UNION },
   { "unsigned", C_UNSIGNED },
   { "__using", C_USING },
@@ -2068,6 +2072,7 @@ struct constants p2_constants[] = {
     { "false", SYM_CONSTANT, 0 },
     { "posx", SYM_CONSTANT, 0x7fffffff },
     { "negx", SYM_CONSTANT, 0x80000000U },
+    
     { "rcfast", SYM_CONSTANT, 0x00000001 },
     { "rcslow", SYM_CONSTANT, 0x00000002 },
     { "xinput", SYM_CONSTANT, 0x00000004 },
@@ -2232,6 +2237,31 @@ struct constants p2_constants[] = {
     { "p_async_tx", SYM_CONSTANT, 0x3c },
     { "p_async_rx", SYM_CONSTANT, 0x3e },
 
+    { "x_imm_32x1_lut",    SYM_CONSTANT, 0x0000 << 16 },
+    { "x_imm_16x2_lut",    SYM_CONSTANT, 0x1000 << 16 },
+    { "x_imm_8x4_lut",     SYM_CONSTANT, 0x2000 << 16 },
+    { "x_imm_4x8_lut",     SYM_CONSTANT, 0x3000 << 16 },
+
+    { "x_imm_32x1_1dac1",  SYM_CONSTANT, 0x4000 << 16 },
+    { "x_imm_16x2_2dac1",  SYM_CONSTANT, 0x5000 << 16 },
+    { "x_imm_16x2_1dac2",  SYM_CONSTANT, 0x5002 << 16 },
+    { "x_imm_8x4_4dac1",   SYM_CONSTANT, 0x6000 << 16 },
+    { "x_imm_8x4_2dac2",   SYM_CONSTANT, 0x6002 << 16 },
+    { "x_imm_8x4_1dac4",   SYM_CONSTANT, 0x6004 << 16 },
+
+    { "x_imm_4x8_4dac2",   SYM_CONSTANT, 0x6006 << 16 },
+    { "x_imm_4x8_2dac4",   SYM_CONSTANT, 0x6007 << 16 },
+    { "x_imm_4x8_1dac8",   SYM_CONSTANT, 0x600e << 16 },
+    { "x_imm_2x16_4dac4",  SYM_CONSTANT, 0x600f << 16 },
+
+    { "x_imm_2x16_2dac8",  SYM_CONSTANT, 0x7000 << 16 },
+    { "x_imm_1x32_4dac8",  SYM_CONSTANT, 0x7001 << 16 },
+
+    { "x_rflong_32x1_lut", SYM_CONSTANT, 0x7002 << 16 },
+    { "x_rflong_16x2_lut", SYM_CONSTANT, 0x7004 << 16 },
+    { "x_rflong_8x4_lut",  SYM_CONSTANT, 0x7006 << 16 },
+    { "x_rflong_4x8_lut",  SYM_CONSTANT, 0x7008 << 16 },
+    
     { "x_rfbyte_1p_1dac1", SYM_CONSTANT, 0x8000 << 16 },
     { "x_rfbyte_2p_2dac1", SYM_CONSTANT, 0x9000 << 16 },
     { "x_rfbyte_2p_1dac2", SYM_CONSTANT, 0x9002 << 16 },
@@ -2257,6 +2287,28 @@ struct constants p2_constants[] = {
     { "hubexec_new", SYM_CONSTANT, 0x30 },
     { "cogexec_new_pair", SYM_CONSTANT, 0x11 },
     { "hubexec_new_pair", SYM_CONSTANT, 0x31 },
+
+    { "newcog", SYM_CONSTANT, 0x10  },
+
+    { "event_int", SYM_CONSTANT, 0 },
+    { "int_off",   SYM_CONSTANT, 0 },
+    { "event_ct1", SYM_CONSTANT, 1 },
+    { "event_ct2", SYM_CONSTANT, 2 },
+    { "event_ct3", SYM_CONSTANT, 3 },
+    { "event_se1", SYM_CONSTANT, 4 },
+    { "event_se2", SYM_CONSTANT, 5 },
+    { "event_se3", SYM_CONSTANT, 6 },
+    { "event_se4", SYM_CONSTANT, 7 },
+
+    { "event_pat", SYM_CONSTANT, 8 },
+    { "event_fbw", SYM_CONSTANT, 9 },
+    { "event_xmt", SYM_CONSTANT, 10 },
+    { "event_xfi", SYM_CONSTANT, 11 },
+    { "event_xro", SYM_CONSTANT, 12 },
+    { "event_xrl", SYM_CONSTANT, 13 },
+    { "event_atn", SYM_CONSTANT, 14 },
+    { "event_qmt", SYM_CONSTANT, 15 },
+    
 };
 
 #if defined(WIN32)
@@ -2493,7 +2545,7 @@ instr_p1[] = {
     { "jmpret", 0x5c800000, JMPRET_OPERANDS, OPC_JMPRET, FLAG_P1_STD },
 
     { "lockclr",0x0c400007, DST_OPERAND_ONLY, OPC_GENERIC_NR, FLAG_P1_STD },
-    { "locknew",0x0cc00004, DST_OPERAND_ONLY, OPC_GENERIC, FLAG_P1_STD },
+    { "locknew",0x0cc00004, DST_OPERAND_ONLY, OPC_LOCKNEW, FLAG_P1_STD },
     { "lockret",0x0c400005, DST_OPERAND_ONLY, OPC_GENERIC_NR, FLAG_P1_STD },
     { "lockset",0x0c400006, DST_OPERAND_ONLY, OPC_GENERIC_NR, FLAG_P1_STD },
 
@@ -2807,7 +2859,7 @@ instr_p2[] = {
     { "hubset", 0x0d600000, P2_DST_CONST_OK,  OPC_HUBSET, 0 },
     { "cogid",  0x0d600001, P2_DST_CONST_OK,  OPC_COGID, FLAG_WC },
     { "cogstop",0x0d600003, P2_DST_CONST_OK,  OPC_COGSTOP, 0 },
-    { "locknew",0x0d600004, DST_OPERAND_ONLY, OPC_GENERIC, FLAG_WC },
+    { "locknew",0x0d600004, DST_OPERAND_ONLY, OPC_LOCKNEW, FLAG_WC },
     { "lockret",0x0d600005, P2_DST_CONST_OK, OPC_GENERIC_NR, 0 },
     { "locktry",0x0d600006, P2_DST_CONST_OK, OPC_GENERIC_NR, FLAG_WC },
     { "lockrel",0x0d600007, P2_DST_CONST_OK, OPC_GENERIC_NR, FLAG_WC },

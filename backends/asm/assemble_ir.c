@@ -360,7 +360,32 @@ PrintCond(struct flexbuf *fb, IRCond cond)
     case COND_NC_AND_NZ:
       flexbuf_addstr(fb, " if_nc_and_nz");
       break;
+    case COND_NC_AND_Z:
+      flexbuf_addstr(fb, " if_nc_and_z");
+      break;        
+    case COND_C_AND_NZ:
+      flexbuf_addstr(fb, " if_c_and_nz");
+      break;
+    case COND_C_AND_Z:
+      flexbuf_addstr(fb, " if_nc_and_z");
+      break;        
+    case COND_C_OR_NZ:
+      flexbuf_addstr(fb, " if_c_or_nz");
+      break;        
+    case COND_NC_OR_NZ:
+      flexbuf_addstr(fb, " if_nc_or_nz");
+      break;        
+    case COND_NC_OR_Z:
+      flexbuf_addstr(fb, " if_nc_or_z");
+      break;        
+    case COND_C_EQ_Z:
+      flexbuf_addstr(fb, " if_c_eq_z");
+      break;
+    case COND_C_NE_Z:
+      flexbuf_addstr(fb, " if_c_ne_z");
+      break;
     default:
+      ERROR(NULL, "Internal error, unexpected condition");
       flexbuf_addstr(fb, " if_??");
       break;
     }
@@ -1121,6 +1146,10 @@ DoAssembleIR(struct flexbuf *fb, IR *ir, Module *P)
     if (ir->instr) {
         int ccset;
 
+        if (ir->cond == COND_FALSE) {
+            flexbuf_addstr(fb, "\tnop\n");
+            return;
+        }
         if (lmmMode && gl_lmm_kind == LMM_KIND_COMPRESS) {
             if (ir->cond == COND_TRUE) {
                 flexbuf_addstr(fb, "\t<");

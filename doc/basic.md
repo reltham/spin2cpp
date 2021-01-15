@@ -2,13 +2,19 @@
 
 ## Introduction
 
-FlexBASIC is the BASIC language supported by the fastspin compiler for the Parallax Propeller and Prop2. It is a BASIC dialect similar to FreeBASIC or Microsoft BASIC, but with a few differences. On the Propeller chip it compiles to LMM code (machine language) which runs quite quickly.
+FlexBASIC is the BASIC language supported by the FlexProp compiler for the Parallax Propeller and Prop2. It is a BASIC dialect similar to FreeBASIC or Microsoft BASIC, but with a few differences. On the Propeller chip it compiles to LMM code (machine language) which runs quite quickly.
 
-fastspin recognizes the language in a file by the extension. If a file has a ".bas" extension it is assumed to be BASIC. Otherwise it is assumed to be a different language (the default is Spin).
+The FlexProp GUI supports BASIC development.
+
+### Command Line compilation
+
+At the moment there is no stand-alone BASIC compiler, but both the C compiler (flexcc) and Spin compiler (flexspin) can compile BASIC programs. The compiler recognizes the language in a file by the extension. If a file has a ".bas" extension it is assumed to be BASIC. Otherwise it is assumed to be a different language (the default is Spin for flexspin and C for flexcc).
+
+Because Spin has similar comment structures to BASIC, the flexspin compiler front end is generally a good choice for BASIC development.
 
 ## Preprocessor
 
-fastspin has a pre-processor that understands basic directives like `#include`, `#define`, and`#ifdef / #ifndef / #else / #endif`.
+flexspin has a pre-processor that understands basic directives like `#include`, `#define`, and`#ifdef / #ifndef / #else / #endif`.
 
 ### Directives
 
@@ -68,7 +74,7 @@ Includes a file. The contents of the file are placed in the compilation just as 
 ```
 #include "foo.h"
 ```
-Included files are searched for first in the same directory as the file that contains the `#include`. If they are not found there, then they are searched for in any directories specified by a `-I` or `-L` option on the command line. If the environment variable `FLEXCC_INCLUDE` is defined, that gives a directory to be searched after command line options. Finally the path `../include` relative to the fastspin executable binary is checked.
+Included files are searched for first in the same directory as the file that contains the `#include`. If they are not found there, then they are searched for in any directories specified by a `-I` or `-L` option on the command line. If the environment variable `FLEXCC_INCLUDE` is defined, that gives a directory to be searched after command line options. Finally the path `../include` relative to the FlexProp executable binary is checked.
 
 #### PRAGMA
 
@@ -94,12 +100,12 @@ Symbol           | When Defined
 `__propeller__`  | always defined to 1 (for P1) or 2 (for P2)
 `__propeller2__` | only defined if compiling for Propeller 2
 `__P2__`         | obsolete version of `__propeller2__`
-`__FLEXBASIC__`  | always defined to the fastspin version number
-`__FASTSPIN__`   | if the `fastspin` front end is used
-`__SPINCVT__`    | always defined to the fastspin version number
-`__SPIN2PASM__`  | if --asm is given (PASM output) (always defined by fastspin)
-`__SPIN2CPP__`   | if C++ or C is being output (never in fastspin)
-`__cplusplus`    | if C++ is being output (never in fastspin)
+`__FLEXBASIC__`  | always defined to the FlexProp version number
+`__FLEXSPIN__`   | if the `flexspin` front end is used
+`__SPINCVT__`    | always defined to the FlexProp version number
+`__SPIN2PASM__`  | if --asm is given (PASM output) (always defined by flexspin)
+`__SPIN2CPP__`   | if C++ or C is being output (never in flexspin)
+`__cplusplus`    | if C++ is being output (never in flexspin)
 
 ## Language Syntax
 
@@ -199,6 +205,7 @@ orelse
 output
 pointer
 print
+private
 program
 ptr
 put
@@ -255,8 +262,10 @@ dirb
 exp
 false
 getcnt
+getms
 getrnd
 getsec
+getus
 hex$
 ina
 inb
@@ -264,9 +273,12 @@ input$
 insert$
 instr
 instrrev
+lcase$
 left$
 len
 log
+lpad$
+ltrim$
 mid$
 mount
 oct$
@@ -277,15 +289,18 @@ pauseus
 pi
 rdpin
 _reboot
+reverse$
 right$
 rnd
 round
+rtrim$
 sendrecvdevice
 _setbaud
 sin
 str$
 tan
 true
+ucase$
 val
 val%
 waitcnt
@@ -489,6 +504,8 @@ The `+` operator normally means addition, but for strings it means concatentatio
 "hello, " + "world"
 ```
 produces the string "hello, world".
+
+As noted above, comparison operators work as expected on string values, which are compared greater than or less than according to the UTF-8 values of the characters in the strings.
 
 #### Assignment operators
 
@@ -721,7 +738,7 @@ Parameters to functions (and subroutines) may be passed "by value" or "by refere
 
 FlexBASIC supports allocation of memory and garbage collection. Memory allocation is done from a small built-in heap. This heap defaults to 256 bytes in size on Propeller 1, and 4096 bytes on Propeller 2. This may be changed by defining a constant `HEAPSIZE` in the top level file of the program.
 
-Garbage collection works by scanning memory for pointers that were returned from the memory allocation function. As long as references to the original pointers returned by functions like `left$` or `right$` exist, the memory will not be re-used for anything else.
+Garbage collection works by scanning memory for pointers that were returned from the memory allocation function. As long as references to the original pointers returned by functions like `left$` or `right$` exist, the memory will not be re-used for anything else. The memory is treated purely as binary blocks; no special interpretation of strings is performed, for example.
 
 Note that a CPU ("COG" in Spin terms) cannot scan the internal memory of other CPUs, so memory allocated by one CPU will only be garbage collected by that same CPU. This can lead to an out of memory situation even if in fact there is memory available to be claimed. For this reason we suggest that all allocation of temporary memory be done in one CPU only.
 
@@ -899,6 +916,10 @@ The hardware registers are not keywords, so they are not reserved to the system.
 ```
 Returns the absolute value of x. If x is a floating point number then so will be the result; if x is an unsigned number then it will be unchanged; otherwise the result will be an Integer.
 
+### ACOS
+
+Predefined function. `acos(x)` returns the inverse cosine of `x`. The result is a floating point value given in radians (*not* degrees). To convert from degrees to radians, multiply by `3.1415926536 / 180.0`.
+
 ### AND
 
 ```
@@ -967,6 +988,10 @@ Reserved word. For now, its only use is in `open` statements to specify that an 
 returns the integer (ASCII) value of the first character of a string. If the
 argument is not a string it is an error.
 
+### ASIN
+
+Predefined function. `asin(x)` returns the inverse sine of `x`. The result is a floating point value given in radians (*not* degrees). To convert from degrees to radians, multiply by `3.1415926536 / 180.0`.
+
 ### ASM
 
 Introduces inline assembly. The block between `asm` and `end asm` is parsed slightly differently than usual; in particular, instruction names are treated as reserved identifiers. There are two kinds of `asm` blocks. A regular `asm` block introduces some assembly code to be executed when the block is reached. An `asm shared` block declares some assembly code and/or data that exists outside of any function. Such code must be explicitly executed with a `cpu` directive.
@@ -1012,6 +1037,14 @@ An `asm shared` block declares some static code and/or data which is not intende
 The main difference between `asm` and `asm shared` is that the `asm shared` blocks are kept separate, outside of all functions and subroutines, whereas `asm` blocks are always part of a function or subroutine (or the main program). `asm` blocks are executed when control flow reaches them; code within `asm shared` must be explicitly invoked via `cpu`.
 
 `asm shared` blocks, like `asm const`, are not optimized by the optimizer.
+
+### ATAN
+
+Predefined function. `atan(x)` returns the inverse tangent of `x`. The result is a floating point value given in radians (*not* degrees). To convert from degrees to radians, multiply by `3.1415926536 / 180.0`.
+
+### ATAN2
+
+Predefined function. `atan2(y, x)` returns the angle (in radians) that the line from the origin to `(x, y)` makes with the x-axis. Note the order of arguments to `atan2` (the y comes first!)
 
 ### BIN$
 
@@ -1197,9 +1230,9 @@ Propeller built in variable which gives the current clock frequency.
 ### CLKSET
 
 ```
-  clkset(mode, freq, xsel)
+  clkset(mode, freq)
 ```
-Propeller built in function. On the P1, this acts the same as the Spin `clkset` function. On P2, this does two `hubset` instructions, the first to set the oscillator and the second (after a short delay) to actually enable it. The `mode` parameter gives the setup value for the oscillator, and the second hubset to enable the oscillator uses `mode + xsel` as its parameter. If `xsel` is omitted, it defaults to `3`.
+Propeller built in function. On the P1, this acts the same as the Spin `clkset` function. On P2, this does two `hubset` instructions, the first to set the oscillator and the second (after a short delay) to actually enable it. The `mode` parameter gives the setup value for the oscillator. For backwards compatibility, if the xsel field (bottom 2 bits) is 0b00 then 0b11 is used instead.
 
 For example:
 ```
@@ -1737,6 +1770,14 @@ Propeller specific builtin function.
 ```
 Returns the current cycle counter. This is an unsigned 32 bit value that counts the number of system clocks elapsed since the device was turned on. It wraps after approximately 54 seconds on propeller 1 and 27 seconds on propeller 2.
 
+### GETMS
+
+```
+  function getms() as uinteger
+  x = getms()
+```
+Builtin function. Returns the number of milliseconds since the device was turned on. On the Propeller 1 this wraps around after approximately 54 seconds. On the P2 the system counter has 64 bits, so it will work for about 49 days.
+
 ### GETRND
 
 ```
@@ -1752,6 +1793,14 @@ Builtin function. Returns a 32 bit random number (unsigned integer).
   x = getsec()
 ```
 Builtin function. Returns the number of seconds since the device was turned on. On the Propeller 1 this wraps around after approximately 54 seconds. On the P2 the system counter has 64 bits, so it will work for millions of years.
+
+### GETUS
+
+```
+  function getus() as uinteger
+  x = getus()
+```
+Builtin function. Returns the number of microseconds since the device was turned on. On the Propeller 1 this wraps around after approximately 54 seconds. On the P2 the system counter has 64 bits, so it will work for about an hour.
 
 ### GOSUB
 
@@ -1942,6 +1991,13 @@ Convert a floating point value to integer. Any fractional parts are truncated.
 
 A 32 bit signed integer type. The unsigned 32 bit integer type is `uinteger`.
 
+### LCASE$
+
+```
+y$ = lcase$(x$)
+```
+Returns a new string which is the same as the original string but with all alphabetical characters converted to lower case.
+
 ### LEFT$
 
 A predefined string function. `left$(s, n)` returns the left-most `n` characters of `s`. If `n` is longer than the length of `s`, returns `s`. If `n` =< 0, returns an empty string. If a memory allocation error occurs, returns `nil`.
@@ -1981,6 +2037,20 @@ A signed 64 bit integer. The unsigned version of this is `ulongint`. This type i
 ### LOOP
 
 Marks the end of a loop introduced by `do`. See DO for details.
+
+### LPAD$
+
+```
+y$ = lpad$(x$, w, ch$)
+```
+Returns a new string which is like the original string but padded on the left so that it has length `w`. If `w` is less than the current length of the string, the function returns the rightmost `w` characters, otherwise it prepends enough copies of `ch$` to make the string `w` characters long.
+
+### LTRIM$
+
+```
+y$ = ltrim$(x$)
+```
+Returns a new string which is like the original string but with leading spaces removed.
 
 ### MID$
 
@@ -2087,16 +2157,18 @@ Open a handle for input and/or output. There are two forms. The most general for
 ```
 where `device` is a device driver structure returned by a system function such as `SendRecvDevice`, and `n` evaluates to an integer between 2 and 7. (Handles 0 and 1 also exist, but are reserved for system use.)
 
-Example:
+Example (for P1):
 ```
   ' declare ser as an object based on a Spin object
-  dim ser as class using("SerialDriver.spin")
+  dim ser as class using("spin/FullDuplexSerial.spin")
   ' initialize the serial device
   ser.start(31, 30, 0, 115_200)
   ' now connect it to handle #2
   open SendRecvDevice(@ser.tx, @ser.rx, @ser.stop) as #2
 ```
 Here `SendRecvDevice` is given pointers to functions to call to send a single character, to receive a single character, and to be called when the handle is closed. Any of these may be `nil`, in which case the corresponding function (output, input, or close) does nothing.
+
+For P2 you would replace "FullDuplexSerial.spin" with "SmartSerial.spin" and adjust the pins and baud rates accordingly.
 
 The second form of `open` uses a file name:
 ```
@@ -2106,7 +2178,11 @@ The second form of `open` uses a file name:
 ```
 This opens the given file for input, output, or append. A file opened for output will be created if it does not already exist, otherwise it will be truncated to 0 bytes long. A file opened for append will be created if it does not exist, but if it does exist it will be opened for output at the end of the file.
 
-This second form of `open` is really only useful after a `mount` call is used to establish a file system.
+This second form of `open` is only useful after a `mount` call is used to establish a file system.
+
+#### Error Handling
+
+The `open` command will throw an integer error corresponding to one of the error numbers in the C `errno.h` header file. This may be caught using the usual `try` / `catch` paradigm.
 
 ### OPTION
 
@@ -2293,6 +2369,10 @@ Within the string literal output fields are specified by special forms, which ar
 print using "%%%%"; x
 ```
 
+### PRIVATE
+
+This keyword is reserved for future use.
+
 ### PROGRAM
 
 This keyword is reserved for future use.
@@ -2336,6 +2416,13 @@ function sum(x, y)
 end function
 ```
 
+### REVERSE$
+
+```
+y$ = reverse$(x$)
+```
+Returns a new string which has the same characters as the original, but in the reverse order (so for example `reverse$("abc")` would return "cba").
+
 ### RIGHT$
 
 A predefined string function. `right$(s, n)` returns the right-most `n` characters of `s`. If `n` is longer than the length of `s`, returns `s`. If `n` =< 0, returns an empty string. If a memory allocation error occurs, returns `nil`.
@@ -2351,6 +2438,20 @@ A predefined function which returns a random floating point number `x` such that
 ### ROUND
 
 A predefined function which takes a floating point number and converts it to an integer, doing rounding towards the nearest integer.
+
+### RPAD$
+
+```
+y$ = rpad$(x$, w, ch$)
+```
+Returns a new string which is like the original string but padded on the right so that it has length `w`. If `w` is less than the current length of the string, the function returns the leftmost `w` characters, otherwise it appends enough copies of `ch$` to make the string `w` characters long.
+
+### RTRIM$
+
+```
+y$ = rtrim$(x$)
+```
+Returns a new string which is like the original string but with trailing spaces removed.
 
 ### SELECT CASE
 
@@ -2399,7 +2500,7 @@ Operator for shifting left. For example:
 ```
   x shl 3
 ```
-is the same as `x << 3` and multiplies x by 8 (2 raised to the power 3).
+is the same as `x << 3` and returns x multiplied by 8 (2 raised to the power 3).
 
 ### SHORT
 
@@ -2407,11 +2508,11 @@ A signed 16 bit integer, occupying two bytes of computer memory. The unsigned ve
 
 ### SHR
 
-Operator for shifting right. For example:
+Operator for shifting bits right. For example:
 ```
   x shr 3
 ```
-is the same as `x >> 3` and shifts the bits of `x` right by 3. If `x` is unsigned the new bits are filled with 0, otherwise they are filled with the sign bit of `x`.
+is the same as `x >> 3` and returns the bits of `x` shifted right by 3. If `x` is unsigned the new bits are filled with 0, otherwise they are filled with the sign bit of `x`. Note that the original value of `x` is left unchanged.
 
 ### SIN
 
@@ -2558,6 +2659,13 @@ creates a new type name `uptr` which is a pointer to a `ubyte`. You may use the 
 ### UBYTE
 
 An unsigned 8 bit integer, occupying one byte of computer memory. The signed version of this is `byte`. The difference arises with the treatment of the upper bit. Both `byte` and `ubyte` treat 0-127 the same, but for `byte` 128 to 255 are considered equivalent to -128 to -1 respectively (that is, when a `byte` is copied to a larger sized integer the upper bit is repeated into all the other bits; for `ubyte` the new bytes are filled with 0 instead).
+
+### UCASE$
+
+```
+y$ = ucase$(x$)
+```
+Returns a new string which is the same as the original string but with all alphabetical characters converted to upper case.
 
 ### UINTEGER
 

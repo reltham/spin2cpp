@@ -1,10 +1,10 @@
 /*
  * Spin compiler parser
- * Copyright (c) 2011-2020 Total Spectrum Software Inc.
+ * Copyright (c) 2011-2021 Total Spectrum Software Inc.
  * See the file COPYING for terms of use.
  */
 
-/* %define api.prefix {spinyy} */
+%pure-parser
 
 %{
 #include <stdio.h>
@@ -12,7 +12,9 @@
 #include <ctype.h>
 #include "spinc.h"
 
-#define YYSTYPE AST*
+#define SPINYYSTYPE AST*
+#undef  YYSTYPE
+#define YYSTYPE SPINYYSTYPE
     
 /* Yacc functions */
     void spinyyerror(const char *);
@@ -129,7 +131,7 @@ static struct s_dbgfmt {
     { "sdec_byte", "%3d", -8 },
     { "sdec_word", "%5d", -16 },
     { "sdec_long", "%9d", 0 },
-    { "uhex", "$%x", -1 },
+    { "uhex", "$%x", 0 },
     { "uhex_byte", "$%02x", 8 },
     { "uhex_word", "$%04x", 16 },
     { "uhex_long", "$%08x", 0 },
@@ -255,10 +257,6 @@ BuildDebugList(AST *exprlist)
 #define YYERROR_VERBOSE 1
 %}
 
-%pure-parser
- //%define parse.error verbose
- //%define parse.lac full
-
 %token SP_IDENTIFIER "identifier"
 %token SP_NUM        "number"
 %token SP_STRING     "string"
@@ -282,6 +280,7 @@ BuildDebugList(AST *exprlist)
 %token SP_LONG       "LONG"
 %token SP_FVAR       "FVAR"
 %token SP_FVARS      "FVARS"
+%token SP_ASMCLK     "ASMCLK"
 
 %token SP_INSTR      "instruction"
 %token SP_INSTRMODIFIER "instruction modifier"
@@ -904,6 +903,15 @@ basedatline:
     { $$ = NewCommentedAST(AST_FIT, AstInteger(0x1f0), NULL, $1); }
   | SP_FILE string SP_EOLN
     { $$ = NewCommentedAST(AST_FILE, GetFullFileName($2), NULL, $1); }
+  | SP_DEBUG '(' debug_exprlist ')' SP_EOLN
+    {
+        // for now just ignore DEBUG in PASM
+        $$ = NULL;
+    }
+  | SP_ASMCLK
+  {
+      SYNTAX_ERROR("ASMCLK instruction is not supported");
+  }
   ;
 
 objblock:
@@ -1394,16 +1402,34 @@ lhs: identifier
     {
         $$ = NewAST(AST_ARRAYREF, $1, $3);
     }
+  | identifier '.' identifier '[' expr ']'
+    {
+        AST *objroot = $1;
+        AST *method = $3;
+        AST *index = $5;
+        AST *expr;
+        expr = NewAST(AST_METHODREF, objroot, method);
+        expr = NewAST(AST_ARRAYREF, expr, index);
+        $$ = expr;
+    }
   | identifier '[' expr ']' '.' '[' range ']'
     {
         AST *arr = NewAST(AST_ARRAYREF, $1, $3);
         AST *range = $7;
-        $$ = NewAST(AST_ARRAYREF, arr, range);
+        $$ = NewAST(AST_RANGEREF, arr, range);
     }
   | hwreg
     { $$ = $1; }
   | hwreg '[' range ']'
     { $$ = NewAST(AST_RANGEREF, $1, $3);
+    }
+  | hwreg '[' '#' '#' range ']'
+    {
+        AST *reg = $1;
+        AST *index = $5;
+        AST *base = NewAST(AST_RANGEREF, reg, index);
+        AST *holder = NewAST(AST_BIGIMMHOLDER, base, NULL);
+        $$ = holder;
     }
   | hwreg '.' '[' range ']'
     { $$ = NewAST(AST_RANGEREF, $1, $4);
@@ -1592,7 +1618,10 @@ operand:
  | '#' '#' expr
    { $$ = NewAST(AST_EXPRLIST, NewAST(AST_BIGIMMHOLDER, $3, NULL), NULL); }
  | expr '[' expr ']'
-   { $$ = NewAST(AST_EXPRLIST, NewAST(AST_ARRAYREF, $1, $3), NULL); }
+   {
+       /* this is an extra rule for LONG, BYTE, etc. */
+       $$ = NewAST(AST_EXPRLIST, NewAST(AST_ARRAYREF, $1, $3), NULL);
+   }
 ;
 
 operandlist:

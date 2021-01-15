@@ -320,13 +320,18 @@ ScanFunctionBody(Function *fdef, AST *body, AST *upper, AST *expectType)
                 sym = LookupSymbol(ast->d.string);
                 if (sym && sym->kind == SYM_VARIABLE && IsAddrRef(body, sym)) {
                     current->volatileVariables = 1;
-                } else if (sym && sym->kind == SYM_LABEL && upper->kind == AST_MEMREF) {
+                } else if (sym && sym->kind == SYM_LABEL) {
                     Label *lab = (Label *)sym->val;
-                    int refalign = TypeAlignment(upper->left);
-                    int labalign = TypeAlignment(lab->type);
-                    if ( (refalign > labalign) && !gl_p2 ) {
-                        lab->flags |= (LABEL_NEEDS_EXTRA_ALIGN|LABEL_USED_IN_SPIN);
-                        WARNING(body, "Label is dereferenced with greater alignment than it was declared with");
+                    if (lab->type == ast_type_void) {
+                        WARNING(body, "Applying @ to RES memory `%s' is not supported in standard Spin", GetIdentifierName(ast));
+                    }
+                    if (upper->kind == AST_MEMREF) {
+                        int refalign = TypeAlignment(upper->left);
+                        int labalign = TypeAlignment(lab->type);
+                        if ( (refalign > labalign) && !gl_p2 ) {
+                            lab->flags |= (LABEL_NEEDS_EXTRA_ALIGN|LABEL_USED_IN_SPIN);
+                            WARNING(body, "Label is dereferenced with greater alignment than it was declared with");
+                        }
                     }
                 } else if (sym && sym->kind == SYM_FUNCTION) {
                     // insert an explicit function address
@@ -663,6 +668,9 @@ doSpinTransform(AST **astptr, int level, AST *parent)
         }
         if (ast->left && IsIdentifier(ast->left)) {
             const char *name = GetUserIdentifierName(ast->left);
+            if (IsVoidType(ExprType(ast->left))) {
+                WARNING(ast->left, "assigning value to RES memory");
+            }
             if ( !strcasecmp("send", name) ) {
                 curfunc->sets_send = 1;
             } else if (!strcasecmp("recv", name)) {

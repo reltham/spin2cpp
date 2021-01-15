@@ -34,6 +34,10 @@ Fcache is a special feature of the compiler whereby small loops are copied from 
 
 Some inline assembly blocks may also be marked to be copied to fcache before execution; see the section on inline assembly for a description of this.
 
+### What loops will be placed in fcache
+
+Loops will be placed in fcache only if (a) they will fit, and (b) they contain no branches to outside the loop (including subroutine calls). The size of the fcache may be set by the `--fcache` flag, but is generally 1024 bytes on P2 and 128 bytes on P1.
+
 ## Functions in COG or LUT memory
 
 Normally functions are placed in HUB memory, because there is a lot more of that. However, it is possible to force some functions to be placed in the chip's internal memory, where they will execute much more quickly. This must be done with care, because internal memory is a very limited resource.
@@ -97,9 +101,9 @@ Pretty much all of COG RAM is used by the compiler. No specific hardware registe
 
 Most of COG RAM is used by the compiler, except that $0-$1f and $1e0-$1ef are left free for application use. The second half of LUT is used for FCACHE; the first half is used by any functions placed into LUT.
 
-`ptra` is used for the stack pointer.
+`ptra` is used for the stack pointer. Applications should avoid using it.
 
-`pa` is used internally for fcache loading.
+`pa` is used internally for fcache loading. Applications may use it as a temporary variable, but be aware that any code execution which may trigger an fcache load (e.g. any loop or subroutine call) may trash its value.
 
 ## Optimizations
 
@@ -136,7 +140,7 @@ The if statement and call to `foo` are removed since the condition is always fal
 
 ### Small Method inlining (-O1, -Oinline-small)
 
-Very small methods are expanded inline.
+Very small methods are expanded inline. This may be prevented by declaring the method with the "noinline" attribute.
 
 ### Register optimization (-O1, -Oregs)
 
@@ -222,7 +226,7 @@ In BASIC we use the `for` keyword followed by a string giving the optimization o
 function for "opt(!loop-reduce)" myfunc()
 ```
 
-Multiple options may be given, separated by commas. To turn an option off, prefix it with `!`. To enable all options for a particular optimization level, start the string with `0`, `1`, `2`, etc., or with the word `all` to enable all optimizations (regardless of the compiler optimization level chosen).
+Multiple options may be given, separated by commas. To turn an option off, prefix it with `!` or with `~`. To enable all options for a particular optimization level, start the string with `0`, `1`, `2`, etc., or with the word `all` to enable all optimizations (regardless of the compiler optimization level chosen).
 
 Thus, a Spin function with `{++opt(0,peephole)}` will always be compiled with no optimization except peepholes, even when the `-O2` option is given to the compiler.
 
@@ -265,54 +269,6 @@ Do not try to declare registers; the inline assembly probably will not be runnin
 #### General Guidelines
 
 Try to keep inline assembly as simple as possible. Use the high level language for loops and conditional control structures; the high level language is there for a reason!
-
-## Command Line Options
-
-There are various command line options for the compiler which may modify the compilation:
-```
-  [ --version ]      print just the compiler version, then exit
-  [ -h ]             display this help
-  [ -L or -I <path> ] add a directory to the include path
-  [ -o ]             output filename
-  [ -b ]             output binary file format
-  [ -e ]             output eeprom file format
-  [ -c ]             output only DAT sections
-  [ -l ]             output a .lst listing file
-  [ -f ]             output list of file names
-  [ -g ]             enable debug statements
-  [ -q ]             quiet mode (suppress banner and non-error text)
-  [ -p ]             disable the preprocessor
-  [ -O[#] ]          set optimization level
-                       -O0 disable all optimization
-                       -O1 apply default optimization (same as no -O flag)
-		       -O2 apply all optimization (same as -O)
-  [ -Wall ]          enable all warnings, including warnings about language extensions
-  [ -Werror ]        turn warnings into errors
-  [ -D <define> ]    add a define
-  [ -2 ]             compile for Prop2 (-2a for original Rev A silicon)
-  [ -w ]             produce Spin wrappers for PASM code
-  [ -H nnnn ]        change the base HUB address (see below)
-  [ -E ]             omit any coginit header
-  [ --code=cog  ]    compile to run in COG memory instead of HUB
-  [ --fcache=N  ]    set size of FCACHE space in longs (0 to disable)
-  [ --fixed ]        use 16.16 fixed point instead of IEEE floating point
-```
-The `-2` option is new: it is for compiling for the Propeller 2.
-
-`flexspin.exe` checks the name it was invoked by. If the name starts with the string "bstc" (case matters) then its output messages mimic that of the bstc compiler; otherwise it tries to match openspin's messages. This is for compatibility with Propeller IDE. For example, you can use flexspin with the PropellerIDE by renaming `bstc.exe` to `bstc.orig.exe` and then copying `flexspin.exe` to `bstc.exe`.
-
-### Changing Hub address
-
-In P2 mode, you may want to change the base hub address for the binary. Normally P2 binaries start at the standard offset of `0x400`. But if you want, for example, to load a flexspin compiled program from TAQOZ or some similar program, you may want to start at a different address (TAQOZ uses the first 64K of RAM). To do this, you may use some combination of the `-H` and `-E` flags.
-
-`-H nnnn` changes the base HUB address from `0x400` to `nnnn`, where `nnnn` is either a decimal number like `65536` or a hex number prefixed with `0x`. By default the binary still expects to be loaded at address 0, so it starts with a `coginit #0, ##nnnn` instruction and then zero padding until the hub start. To skip the `coginit` and padding, add the `-E` flag.
-
-#### Example
-
-To compile a program to start at address 65536 (at the 64K boundary), do:
-```
-flexspin -2 -H 0x10000 -E fibo.bas
-```
 
 ## Memory Management
 
@@ -362,3 +318,160 @@ The C version is a little unexpected; one would expect HEAPSIZE to be declared a
 
 Temporary memory may be allocated on the stack by means of the call `__builtin_alloca(siz)`, which allocates `siz` bytes of memory on the stack. This is like the C `alloca` function. Note that the pointer returned by `__builtin_alloca` will become invalid as soon as the current function returns, so it should not be placed in any global variable (and definitely should not be returned from the function!)
 
+## Terminal Control
+
+The FlexProp system uses the default system terminal, configured when possible to accept VT100 (ANSI) escape sequences.
+
+### Changing baud rate
+
+All languages have a `_setbaud(N)` function to set the baud rate to `N`.
+
+### Changing echo and CR/LF interpretation
+
+Normally input (e.g. from a C `getchar()`) is echoed back to the screen, and carriage return (ASCII 13) is converted to line feed (ASCII 10). Both of these behaviors may be changed via the `_setrxtxflags(mode)` function. The bits in `mode` control terminal behavior: if `mode & 1` is true, then characters are echoed, and if `mode & 2` is true then carriage return (CR) is converted to line feed (LF) on input, and line feed is converted to CR + LF on output.
+
+The current state of the flags may be retrieved via `_getrxtxflags()`.
+
+## File I/O (P2 Only)
+
+C and BASIC have built in support for accessing file systems. The file systems first must be given a name with the `mount` system call, and then may be accessed with the normal language functions.
+
+### Mount
+
+The `mount` call gives a name to a file system. For example, after
+```
+mount("/host", _vfs_open_host());
+mount("/sd", _vfs_open_sdcard());
+```
+files on the host PC may be accessed via names like "/host/foo.txt", "/host/bar/bar.txt", and so on, and files on the SD card may be accessed by names like "/sd/root.txt", "/sd/subdir/file.txt", and so on.
+
+This only works on P2, because it requires a lot of HUB memory. Also, the host file server requires features built in to `loadp2`.
+
+Available file systems are:
+
+  * `_vfs_open_host()` (for the loadp2 Plan 9 file system)
+  * `_vfs_open_sdcard()` for a FAT file system on the P2 SD card.
+
+It is OK to make multiple mount calls, but they should have different names.
+
+### Options for SD Card
+
+If you define the symbol `FF_USE_LFN` on the command line with an option like `-DFF_USE_LFN` then long file names will be enabled for the SD card.
+
+The pins to use for the SD card may be changed by changing the following defines on the command line:
+```
+PIN_CLK  (default 61)
+PIN_SS   (default 60)
+PIN_MOSI (default 59)
+PIN_MISO (default 58)
+```
+So for example to change to using pins 0-3 for these you would add `-DPIN_MISO=0 -DPIN_MOSI=1 -DPIN_SS=2 -DPIN_CLK=3` to the command line.
+
+## Command Line Options
+
+There are various command line options for the compiler which may modify the compilation:
+```
+  [ --version ]      print just the compiler version, then exit
+  [ -h ]             display this help
+  [ -L or -I <path> ] add a directory to the include path
+  [ -o ]             output filename
+  [ -b ]             output binary file format
+  [ -e ]             output eeprom file format
+  [ -c ]             output only DAT sections
+  [ -l ]             output a .lst listing file
+  [ -f ]             output list of file names
+  [ -g ]             enable debug statements
+  [ -q ]             quiet mode (suppress banner and non-error text)
+  [ -p ]             disable the preprocessor
+  [ -O[#] ]          set optimization level
+                       -O0 disable all optimization
+                       -O1 apply default optimization (same as no -O flag)
+		       -O2 apply all optimization (same as -O)
+  [ -Wall ]          enable all warnings, including warnings about language extensions
+  [ -Werror ]        turn warnings into errors
+  [ -D <define> ]    add a define
+  [ -2 ]             compile for Prop2
+  [ -w ]             produce Spin wrappers for PASM code
+  [ -H nnnn ]        change the base HUB address (see below)
+  [ -E ]             omit any coginit header
+  [ --code=cog  ]    compile to run in COG memory instead of HUB
+  [ --fcache=N  ]    set size of FCACHE space in longs (0 to disable)
+  [ --fixed ]        use 16.16 fixed point instead of IEEE floating point
+```
+The `-2` option is new: it is for compiling for the Propeller 2.
+
+`flexspin.exe` checks the name it was invoked by. If the name starts with the string "bstc" (case matters) then its output messages mimic that of the bstc compiler; otherwise it tries to match openspin's messages. This is for compatibility with Propeller IDE. For example, you can use flexspin with the PropellerIDE by renaming `bstc.exe` to `bstc.orig.exe` and then copying `flexspin.exe` to `bstc.exe`.
+
+### Changing Hub address
+
+In P2 mode, you may want to change the base hub address for the binary. Normally P2 binaries start at the standard offset of `0x400`. But if you want, for example, to load a flexspin compiled program from TAQOZ or some similar program, you may want to start at a different address (TAQOZ uses the first 64K of RAM). To do this, you may use some combination of the `-H` and `-E` flags.
+
+`-H nnnn` changes the base HUB address from `0x400` to `nnnn`, where `nnnn` is either a decimal number like `65536` or a hex number prefixed with `0x`. By default the binary still expects to be loaded at address 0, so it starts with a `coginit #0, ##nnnn` instruction and then zero padding until the hub start. To skip the `coginit` and padding, add the `-E` flag.
+
+#### Example
+
+To compile a program to start at address 65536 (at the 64K boundary), do:
+```
+flexspin -2 -H 0x10000 -E fibo.bas
+```
+
+## Common low level functions
+
+A number of low level functions are available in all languages. The C prototypes are given below, but they may be called from any language and are always available. If a user function with the same name is provided, the built-in function will not be available from user code (but internally the libraries *may* continue to use the built-in version; this isn't defined).
+
+Unless otherwise noted, these functions are available for both P1 and P2.
+
+### Serial port access
+
+#### _txraw
+
+```
+int _txraw(int c)
+```
+sends character `c` out the default serial port. Always returns 1.
+
+#### _rxraw
+
+```
+int _rxraw(int n=0)
+```
+Receives a character on the default serial port. `n` is a timeout in milliseconds. If the timeout elapses with no character received, `_rxraw` returns -1, otherwise it returns the received character. The default timeout (0) signifies "forever"; that is, if `n` is 0 the `_rxraw` function will wait as long as necessary until a character is received.
+
+#### _setbaud
+
+```
+void _setbaud(int rate)
+```
+Sets the baud rate on the default serial port to `rate`. For example, to change the serial port to 115200 baud you would call `_setbaud(115200)`. The default rates set up in C and BASIC initialization code are are 115200 for P1 and 230400 for P2. In Spin you may need to call `_setbaud` explicitly before calling `_rxraw` or `_txraw`.
+
+### Time related functions
+
+#### _getsec
+
+Gets elapsed seconds.
+
+#### _getms
+
+Gets elapsed microseconds.
+
+#### _getus
+
+Gets elapsed microseconds.
+
+#### _waitx
+
+```
+void _waitx(unsigned cycles)
+```
+Pauses for `cycles` cycles.
+
+### Cog control
+
+#### _cogchk
+
+```
+int _cogchk(int id)
+```
+Checks to see if cog number id is running. Returns -1 if running, 0 if not.
+
+This function may be relatively slow on P1, as it has to manually probe the COGs (on P2 it's a built in instruction).

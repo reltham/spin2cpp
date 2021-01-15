@@ -226,6 +226,9 @@ CompileInlineOperand(IRList *irl, AST *expr, int *effects, int immflag)
     } else if (expr->kind == AST_HERE) {
         /* handle $ */
         return NewPcRelative(0);
+    } else if (IsConstExpr(expr)) {
+        int32_t val = EvalConstExpr(expr);
+        return ImmediateRef(immflag, val);
     } else if (expr->kind == AST_OPERATOR) {
         // have to handle things like ptra++
         if (expr->d.ival == K_INCREMENT || expr->d.ival == K_DECREMENT) {
@@ -288,7 +291,7 @@ CompileInlineOperand(IRList *irl, AST *expr, int *effects, int immflag)
 #define MAX_OPERANDS 4
 
 static IR *
-CompileInlineInstr(IRList *irl, AST *ast)
+CompileInlineInstr_only(IRList *irl, AST *ast)
 {
     Instruction *instr;
     IR *ir;
@@ -337,20 +340,50 @@ CompileInlineInstr(IRList *irl, AST *ast)
     case 0xe:
         ir->cond = COND_LE;
         break;
+    case 0xd:
+        ir->cond = COND_C_OR_NZ;
+        break;
     case 0xc:
         ir->cond = COND_LT;
+        break;
+    case 0xb:
+        ir->cond = COND_NC_OR_Z;
         break;
     case 0xa:
         ir->cond = COND_EQ;
         break;
+    case 0x9:
+        ir->cond = COND_C_EQ_Z;
+        break;
+    case 0x7:
+        ir->cond = COND_NC_OR_NZ;
+        break;
+    case 0x6:
+        ir->cond = COND_C_NE_Z;
+        break;
     case 0x5:
         ir->cond = COND_NE;
+        break;
+    case 0x4:
+        ir->cond = COND_C_AND_NZ;
         break;
     case 0x3:
         ir->cond = COND_GE;
         break;
+    case 0x2:
+        ir->cond = COND_NC_AND_Z;
+        break;
     case 0x1:
         ir->cond = COND_GT;
+        break;
+    case 0x0:
+        if (gl_p2) {
+            IR *newir = NewIR(OPC_RET);
+            ir->next = newir;
+            //ERROR(ast, "Cannot handle _ret_ on instruction in inline asm; convert to regular ret for flexspin compatibility");
+        } else {
+            ir->cond = COND_FALSE;
+        }
         break;
     default:
         ERROR(ast, "Cannot handle this condition on instruction in inline asm");
@@ -404,7 +437,6 @@ CompileInlineInstr(IRList *irl, AST *ast)
             }
         }
     }
-    AppendIR(irl, ir);
     return ir;
 }
 
@@ -459,12 +491,13 @@ CompileInlineAsm(IRList *irl, AST *origtop, unsigned asmFlags)
         return;
     }
 
+    enddst = NewHubLabel();
+
     if (asmFlags & INLINE_ASM_FLAG_FCACHE) {
         if (gl_fcache_size <= 0) {
             WARNING(origtop, "FCACHE is disabled, asm will be in HUB");
         } else {
             startdst = NewHubLabel();
-            enddst = NewHubLabel();
             fcache = NewIR(OPC_FCACHE);
             fcache->src = startdst;
             fcache->dst = enddst;
@@ -507,7 +540,13 @@ CompileInlineAsm(IRList *irl, AST *origtop, unsigned asmFlags)
             ast = ast->left;
         }
         if (ast->kind == AST_INSTRHOLDER) {
-            IR *ir = CompileInlineInstr(irl, ast->left);
+            IR *ir = CompileInlineInstr_only(irl, ast->left);
+            IR *extrair = ir->next;
+
+            if (extrair) {
+                ir->next = NULL;
+            }
+            AppendIR(irl, ir);
             if (!ir) break;
             if (isConst) {
                 ir->flags |= FLAG_KEEP_INSTR;
@@ -515,6 +554,26 @@ CompileInlineAsm(IRList *irl, AST *origtop, unsigned asmFlags)
             ir->addr = relpc;
             if (!firstir) firstir = ir;
             relpc++;
+            if (ir->opc == OPC_RET) {
+                //WARNING(ast, "ret instruction in inline asm converted to jump to end of asm");
+                ReplaceOpcode(ir, OPC_JUMP);
+                ir->dst = enddst;
+                if (!endlabel) {
+                    endlabel = NewIR(OPC_LABEL);
+                    endlabel->dst = enddst;
+                }
+            }
+            if (extrair) {
+                if (extrair->opc == OPC_RET) {
+                    ReplaceOpcode(extrair, OPC_JUMP);
+                    extrair->dst = enddst;
+                    if (!endlabel) {
+                        endlabel = NewIR(OPC_LABEL);
+                        endlabel->dst = enddst;
+                    }
+                }
+                AppendIR(irl, extrair);
+            }
         } else if (ast->kind == AST_IDENTIFIER) {
             Symbol *sym = FindSymbol(&curfunc->localsyms, ast->d.string);
             Operand *op;
@@ -537,7 +596,7 @@ CompileInlineAsm(IRList *irl, AST *origtop, unsigned asmFlags)
             break;
         }
     }
-    if (fcache) {
+    if (fcache || endlabel) {
         if (relpc > gl_fcache_size) {
             ERROR(origtop, "Inline assembly too large to fit in fcache");
         }

@@ -2,9 +2,9 @@
 
 ## Introduction
 
-FlexC is the C dialect implemented by the fastspin compiler used in FlexGUI. It eventually will implement the C99 standard with some C++ extensions.
+FlexC is the C dialect implemented by the FlexProp compiler. It eventually will implement the C99 standard with some C++ extensions. The "natve" front end is `flexcc`, although the other FlexProp tools (like `flexspin`) can also compile C files.
 
-fastspin recognizes the language by the extension of the file being compiled. If a file ends in `.c` it is treated as a C file. If a file ends in `.cpp`, `.cc`, or `.cxx` then it is treated as a C++ file; this enables a few keywords not available in C, but otherwise is very similar to C mode (FlexC is not a fully featured C++ compiler).
+flexcc recognizes the language by the extension of the file being compiled. If a file ends in `.c` it is treated as a C file. If a file ends in `.cpp`, `.cc`, or `.cxx` then it is treated as a C++ file; this enables a few keywords not available in C, but otherwise is very similar to C mode (FlexC is not a fully featured C++ compiler).
 
 This document assumes that you are familiar with programming in C and with the Parallax Propeller chip. It mostly covers the differences between standard C and FlexC.
 
@@ -72,7 +72,17 @@ In C code, the P1 clock frequency defaults to 80 MHz, assuming a 5 MHz crystal a
 
 ### P2 Clock Frequency
 
-The P2 has a default clock frequency of 160 MHz in C mode. You may set up a different frequency with the loader (loadp2), but it is probably best to explicitly set it using `_clkset(mode, freq)`. This is similar to the P1 `clkset` except that `mode` is a P2 `HUBSET` mode.
+The P2 has a default clock frequency of 160 MHz in C mode. You may set up a different frequency with the loader (loadp2), but it is probably best to explicitly set it, either with a `_clkfreq` enum, or by using `_clkset(mode, freq)`. This is similar to the P1 `clkset` except that `mode` is a P2 `HUBSET` mode.
+
+#### _clkfreq
+
+If an enumeration constant named `_clkfreq` is defined in the top level file (near the `main` function) then its value is used for the clock frequency instead of 160 MHz. For example:
+```
+enum { _clkfreq = 297000000 };
+```
+may be used to specify 297 MHz.
+
+#### _clkset
 
 Header files `sys/p2es_clock.h` and `sys/p2d2_clock.h` are provided for convenience in calculating a mode. To use these, define the macro P2_TARGET_MHZ before including the appropriate header file for your board. The header will calculate and define macros `_SETFREQ` (containing the mode bits) and `_CLOCKFREQ` (containing the frequency; this should normally be `P2_TARGET_MHZ * 1000000`). So for example to set the frequency to 180 MHz you would do:
 ```
@@ -245,7 +255,7 @@ Calculates the absolute value of `y`. This is not like a normal C function in th
 ```
 Allocates `size` bytes of memory on the stack, and returns a pointer to that memory. When the enclosing function returns, the allocated memory will become invalid (so do not attempt to return the result from a function!)
 
-### Count Leading Zeros
+### CLZ (Count Leading Zeros)
 
 ```
   x = __builtin_clz(y)
@@ -282,6 +292,23 @@ Reverses the bits of `y` and then shifts the result right by `32-n` places. This
   x = __builtin_sqrt(y)
 ```
 Calculates the square root of `y`. This is not like a normal C function in that the result type depends on the input type. If the input is an integer, the result is an integer. If the input is a float, the result is a float.
+
+## Builtin Constants
+
+FlexC has many built-in constants for P1 and P2 hardware access. These constants are inherited from the Spin / Spin2 support, and so they are actually case insensitive. See the Parallax Spin2 "Built-In Symbols" sections for a list of these.
+
+For example, the Spin2 `P_INVERT_A` smart pin symbol is available in C, and may be referred to as `P_INVERT_A`, `p_invert_a`, or `P_Invert_A`. The all-caps form is preferred, as it is most likely to be compatible with other C compilers. These built-in symbols are "weak" and may be overridden by the user, but any such override only affects the exact (case sensitive) version defined by the user. The following program illustrates this:
+```
+#include <stdio.h>
+
+int main()
+{
+    int p_invert_a = 0xdeadbeef; // overrides the built-in symbol
+    printf("P_INVERT_A = 0x%08x\n", P_INVERT_A); // prints 0x80000000
+    printf("P_Invert_A = 0x%08x\n", P_Invert_A); // prints 0x80000000
+    printf("p_invert_a = 0x%08x\n", p_invert_a); // prints 0xdeadbeef
+}
+```
 
 ## propeller.h
 
@@ -328,7 +355,7 @@ Inverts the output pin `pin`.
 
 Propeller 2 specific functions are contained in the header file `propeller2.h`. This file is usually quite portable among C compilers.
 
-### COG and Clock control
+### Clock and time control
 
 #### _clkset
 
@@ -351,34 +378,6 @@ uint32_t _cnth(void);
 ```
 Returns the upper 32 bits of the system clock counter.
 
-#### _cogchk
-
-```
-int _cogchk(int n);
-```
-Checks to see if cog `n` is running. Returns 1 if it is, 0 if it is not.
-
-#### _coginit
-
-```
-int _coginit(int cogid, void *cogpgm, void *ptra)
-```
-Starts PASM code in another COG. `cogid` is the ID of the COG to start, or `ANY_COG` if a new one should be allocated. `cogpgm` points to the compiled PASM code to start, and `ptra` is a value to be placed in the new COG's `ptra` register. Returns the ID of the new COG, or -1 on failure.
-
-#### _cogstop
-
-```
-void _cogstop(int cogid);
-```
-Stops the given COG.
-
-#### _reboot
-
-```
-void _reboot(void);
-```
-Reboots the P2. Needless to say, this function never returns.
-
 #### _getsec
 
 ```
@@ -400,12 +399,116 @@ uint32_t _getus(void);
 ```
 Gets the time elapsed on the system timer in microseconds. On the P1 this will wrap around after about 54 seconds.
 
+#### _waitms
+
+```
+void _waitms(uint32_t delay);
+```
+Waits for `delay` milliseconds.
+
+#### _waitus
+
+```
+void _waitus(uint32_t delay);
+```
+Waits for `delay` microseconds.
+
 #### _waitx
 
 ```
 void _waitx(uint32_t delay);
 ```
 Waits for `delay` clock cycles.
+
+### COG control
+
+#### _cogatn
+
+```
+void _cogatn(uint32_t mask)
+```
+Raises the ATN signal on the COGs specified by `mask`. `mask` is a bitmask with 1 set in position `n` if COG `n` should be signalled, So for example, to signal COGs 2 and 3 you would say `_cogatn((1<<2)|(1<<3))`.
+
+#### _cogchk
+
+```
+int _cogchk(int n);
+```
+Checks to see if cog `n` is running. Returns nonzero if it is, 0 if it is not.
+
+#### _coginit
+
+```
+int _coginit(int cogid, void *cogpgm, void *ptra)
+```
+Starts PASM code in another COG. `cogid` is the ID of the COG to start, or `ANY_COG` if a new one should be allocated. `cogpgm` points to the compiled PASM code to start, and `ptra` is a value to be placed in the new COG's `ptra` register. Returns the ID of the new COG, or -1 on failure.
+
+Some compilers (e.g. Catalina) use `_cogstart_PASM` for this.
+
+#### _cogstart_C
+
+```
+int _cogstart_C(void (*func)(void *), void *arg, void *stack_base, uint32_t stack_size)
+```
+Starts C code in another COG. `func` is the address of a C function which expects one argument, and which will run in another COG (cpu core). `arg` is the argument to pass to the function for this invocation. `stack_base` is the base address of a block of memory to use for the stack. `stack_size` is the size in bytes of the memory.
+
+#### _cogstop
+
+```
+void _cogstop(int cogid);
+```
+Stops the given COG.
+
+#### _pollatn
+
+```
+int _pollatn(void);
+```
+Checks to see if ATN has been signalled for this COG by `_cogatn`. Returns nonzero if it has, 0 if not.
+
+#### _reboot
+
+```
+void _reboot(void);
+```
+Reboots the P2. Needless to say, this function never returns.
+
+#### _waitatn
+
+```
+int _waitatn(void);
+```
+Waits for an ATN signal to be sent by `_cogatn`. Doesn't really return any useful information at this time.
+
+### Locks
+
+#### _locknew
+
+```
+int _locknew(void);
+```
+Allocate a new lock and return its value. Returns -1 if no locks are avilable.
+
+#### _lockret
+
+```
+void _lockret(int lockid);
+```
+Frees a lock previously allocated by `_locknew`.
+
+#### _locktry
+
+```
+int _locktry(int lockid);
+```
+Attempts to lock the lock with id `lockid`. Returns 0 on failure, non-zero on success.
+
+#### _lockrel
+
+```
+int _lockrel(int lockid);
+```
+Releases a lock held due to a successful call to `_locktry`.
 
 ### Regular Pin I/O
 
@@ -458,6 +561,63 @@ void      _pinw(int pin, int val);
 ```
 Makes pin `pin` an output and writes `val` to it. `val` should be only 0 or 1; results for other values are undefined.
 
+### Smart Pin controls
+
+#### _akpin
+
+```
+void _akpin(int pin);
+```
+Acknowledge input from the given smart pin. Necessary only if you use `rqpin`.
+
+#### _rdpin
+
+```
+uint32_t _rdpin(int pin);
+```
+Reads data from the smart pin and acknowledges the input. The value returned is the 32 bit smart pin data value.
+
+#### _rqpin
+
+```
+uint32_t _rqpin(int pin);
+```
+Reads data from the smart pin and *without* acknowledging the input. The value returned is the 32 bit smart pin data value. `_akpin` must be called later in order to allow further smart pin input.
+
+#### _wrpin
+
+```
+void _wrpin(int pin, uint32_t val);
+```
+Write `val` to the smart pin mode of pin `pin`.
+
+#### _wxpin
+
+```
+void _wxpin(int pin, uint32_t val);
+```
+Write `val` to the smart pin X register of pin `pin`.
+
+#### _wypin
+
+```
+void _wypin(int pin, uint32_t val);
+```
+Write `val` to the smart pin Y register of pin `pin`.
+
+#### _pinstart
+
+```
+void _pinstart(int pin, uint32_t mode, uint32_t xval, uint32_t yval);
+```
+Activate a smart pin. `mode` is the smart pin mode (written with `_wrpin`), and `xval` and `yval` are the values for the smart pin X and Y registers.
+
+#### _pinclear
+
+```
+void _pinclear(int pin);
+```
+Turn off a smart pin (writes 0 to mode).
 
 ## Disk I/O routines (P2 Only)
 
@@ -472,7 +632,7 @@ mount("/sd", _vfs_open_sdcard());
 ```
 files on the host PC may be accessed via names like "/host/foo.txt", "/host/bar/bar.txt", and so on, and files on the SD card may be accessed by names like "/sd/root.txt", "/sd/subdir/file.txt", and so on.
 
-This only works on P2, because it requires a lot of HUB memory, and also needs the host file server built in to `loadp2`.
+This only works on P2, because it requires a lot of HUB memory. Also, the host file server requires features built in to `loadp2`.
 
 Available file systems are:
 
@@ -522,6 +682,10 @@ Closes directory previously opened with `opendir`.
 `struct dirent *readdir(DIR *dir)`
 
 Reads the next directory entry.
+
+### Further information
+
+For further information see the `File I/O` section of the general documentation.
 
 ## Time Functions
 

@@ -67,6 +67,7 @@ Operand *argreg[MAX_ARG_REGISTER];
 Operand *localreg[MAX_LOCAL_REGISTER];
 Operand *leafreg[MAX_LOCAL_REGISTER];
 Operand *sendreg, *recvreg;
+Operand *lockreg, *lockreg_addr_ptr;
 
 static Operand *nextlabel;
 static Operand *quitlabel;
@@ -426,7 +427,7 @@ Operand *GetArgReg(int n)
 {
     static char rvalname[32];
     if (n < 0 || n >= MAX_ARG_REGISTER) {
-        ERROR(NULL, "Internal error exceeded arg register limit");
+        ERROR(NULL, "Internal error exceeded arg register limit; too many parameters to function");
         return NULL;
     }
     if (!argreg[n]) {
@@ -440,7 +441,7 @@ static Operand *GetGeneralLocalReg(int n)
 {
     static char rvalname[32];
     if (n < 0 || n >= MAX_LOCAL_REGISTER) {
-        ERROR(NULL, "Internal error exceeded local register limit");
+        ERROR(NULL, "Internal error exceeded local register limit, possibly due to -O2 optimization needing additional registers or code being too complicated");
         return NULL;
     }
     if (!localreg[n]) {
@@ -5591,7 +5592,8 @@ const char *builtin_pushregs_p2 =
     "    add  ptra, COUNT_\n"
     "    shr  COUNT_, #2\n"
     "    setq #2 ' push 3 registers starting at COUNT_\n"
-    "    wrlong COUNT_, ptra++\n"
+    "    wrlong COUNT_, ptra\n"
+    "    add    ptra, #12\n"
     "    mov    fp, ptra\n"
     "    jmp  pa\n"
 
@@ -5922,6 +5924,7 @@ extern Module *globalModule;
  *   if_nz jmp spininit
  *         initialize stack
  *         set clock if necessary
+ *         set up lock register
  *         call P->firstfunc using stackcall
  * exit:
  *         cogstop(cogid)
@@ -5973,6 +5976,11 @@ EmitMain_P1(IRList *irl, Module *P)
     ir = EmitMove(irl, arg1, GetOneGlobal(REG_HW, "par", 0));
     ir->flags |= FLAG_WZ;
 
+    // set up global lock register
+    EmitOp1(irl, OPC_LOCKNEW, lockreg);
+    EmitOp2(irl, OPC_WRLONG, lockreg, lockreg_addr_ptr);
+    
+    // set up to run LMM
     if (HUB_CODE) {
         ValidateStackptr();
         ValidateObjbase();
@@ -6095,6 +6103,11 @@ EmitMain_P2(IRList *irl, Module *P, Operand *lutstart)
     EmitOp1(irl, OPC_ORGF, NewImmediate(32));
     
     EmitLabel(irl, skip_clock_label);
+
+    // set up global lock register
+    EmitOp1(irl, OPC_LOCKNEW, lockreg);
+    EmitOp2(irl, OPC_WRLONG, lockreg, lockreg_addr_ptr);
+    
     // force LUT code, if any, to be loaded
     if (lutstart) {
         ir = EmitOp2(irl, OPC_MOV, pa_reg, lutstart);
@@ -6389,6 +6402,10 @@ OutputAsmCode(const char *fname, Module *P, int outputMain)
             EmitOp1(&lutcode, OPC_ORG, NewImmediate(0x200));
             EmitLabel(&lutcode, lutstart);
         }
+        lockreg = GetOneGlobal(REG_REG, "__lockreg", 0);
+        lockreg_addr_ptr = NewOperand(IMM_HUB_LABEL, "__lockreg", 0);
+        lockreg_addr_ptr = NewImmediatePtr(NULL, lockreg_addr_ptr);
+        
         if (gl_output == OUTPUT_COGSPIN) {
             EmitMain_CogSpin(&cogcode, P, maxargs, maxrets);
         } else if (outputMain) {

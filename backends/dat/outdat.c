@@ -1,7 +1,7 @@
 //
 // binary data output for spin2cpp
 //
-// Copyright 2012-2020 Total Spectrum Software Inc.
+// Copyright 2012-2021 Total Spectrum Software Inc.
 // see the file COPYING for conditions of redistribution
 //
 #include <stdio.h>
@@ -583,6 +583,9 @@ outputDataList(Flexbuf *f, int size, AST *ast, Flexbuf *relocs)
     origval = 0;
     while (ast) {
         sub = ast->left;
+        if (sub->kind == AST_EXPRLIST && sub->right == 0) {
+            sub = sub->left;
+        }
         if (sub->kind == AST_BYTELIST) {
             size = 1;
             sub = ExpectOneListElem(sub->left);
@@ -734,8 +737,9 @@ SpecialRdOperand(AST *ast, uint32_t opimm)
     uint32_t val;
     int subval = 0;
     int negsubval = 0;
+    int saw_array = 0;
     
-    if (opimm) {
+    if (opimm && ast->kind != AST_RANGEREF) {
         // user provided an immediate value; make sure it
         // fits in $00-$ff
         val = EvalPasmExpr(ast);
@@ -749,6 +753,7 @@ SpecialRdOperand(AST *ast, uint32_t opimm)
     if (ast->kind == AST_ARRAYREF) {
         subval = EvalPasmExpr(ast->right);
         ast = ast->left;
+        saw_array = 1;
     }
     
     // other things
@@ -806,15 +811,23 @@ SpecialRdOperand(AST *ast, uint32_t opimm)
             val |= 0x180;
         } else {
             if (val) {
-                ERROR(ast, "bad hardware reference");
+                ERROR(ast, "only ptra or ptrb allowed");
             }
             return 0;
         }
-    } else if (val) {
-        ERROR(ast, "bad rdlong/wrlong pointer reference");
-        return 0;
+    } else if (val || saw_array) {
+        ERROR(ast, "bad rd*/wr* pointer: only ptra or ptrb allowed");
+        return 0x100;
     }
 
+    if (opimm & BIG_IMM_SRC) {
+        // the "val" bits have to go up
+        if (val & 0x100) {
+            val = val << 15;
+            val |= subval & 0xfffff;
+            return val;
+        }
+    }
     // index ranges from -32 to 31 for all modes on rev A,
     // and for most of them on rev B (except for plain indexing)
     if (0 != (val & 0x60) || gl_p2 == P2_REV_A) {

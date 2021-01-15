@@ -901,6 +901,9 @@ doDeclareFunction(AST *funcblock)
             }
         }
     }
+    if (FindAnnotation(annotation, "noinline") != 0) {
+        fdef->no_inline = 1;
+    }
     fdef->name = funcname_internal;
     fdef->user_name = funcname_user;
     fdef->annotations = annotation;
@@ -1857,7 +1860,10 @@ CheckFunctionCalls(AST *ast)
         } else {
             if (gotArgs != expectArgs) {
                 if (f && IsCLang(f->language)) {
-                    WARNING(ast, "Bad number of parameters in call to %s: expected %d found %d", fname, expectArgs, gotArgs);
+                    if (strcmp(f->name, "main") != 0) {
+                        // don't warn for main()
+                        WARNING(ast, "Bad number of parameters in call to %s: expected %d found %d", fname, expectArgs, gotArgs);
+                    }
                 } else {
                     ERROR(ast, "Bad number of parameters in call to %s: expected %d found %d", fname, expectArgs, gotArgs);
                 }

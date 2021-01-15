@@ -106,6 +106,7 @@ int _cogstart(void (*func)(void *), void *arg, void *stack_base, uint32_t stack_
 #endif
 
 // alias used by Catalina
+#define _cogstart_PASM(cogid, pgm, arg)     _coginit(cogid, pgm, arg)
 #define _cogstart_C(func, arg, stack, size) _cogstart(func, arg, stack, size)
 
 /* stop/check status of COGs */
@@ -167,6 +168,11 @@ void      _wypin(int pin, uint32_t val);
 void      _akpin(int pin);
 uint32_t  _rdpin(int pin);
 uint32_t  _rqpin(int pin);
+
+/* set up smart pin: WRPIN=mode, WXVAL=xval, WYPIN=YVAL */
+void      _pinstart(int pin, uint32_t mode, uint32_t xval, uint32_t yval);
+/* turn off smart pin */
+void      _pinclear(int pin);
 
 /* access to previously set clock mode and frequency */
 extern uint32_t _clockfreq(void);

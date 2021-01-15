@@ -1,6 +1,6 @@
 /*
  * Spin to C/C++ translator
- * Copyright 2011-2020 Total Spectrum Software Inc.
+ * Copyright 2011-2021 Total Spectrum Software Inc.
  * 
  * +--------------------------------------------------------------------
  * ¦  TERMS OF USE: MIT License
@@ -47,11 +47,11 @@ static void
 PrintInfo(FILE *f, int bstcMode)
 {
     if (bstcMode) {
-        fprintf(f, "FlexSpin Compiler v%s - Copyright 2011-2020 Total Spectrum Software Inc.\n", VERSIONSTR);
+        fprintf(f, "FlexSpin Compiler v%s - Copyright 2011-2021 Total Spectrum Software Inc.\n", VERSIONSTR);
         fprintf(f, "Compiled on: " __DATE__ "\n");
         
     } else {
-        fprintf(f, "Propeller Spin/PASM Compiler 'FlexSpin' (c) 2011-2020 Total Spectrum Software Inc.\n");
+        fprintf(f, "Propeller Spin/PASM Compiler 'FlexSpin' (c) 2011-2021 Total Spectrum Software Inc.\n");
         fprintf(f, "Version %s Compiled on: " __DATE__ "\n", VERSIONSTR);
     }
     fflush(f);
@@ -78,9 +78,7 @@ Usage(FILE *f, int bstcMode)
     fprintf(f, "  [ -p ]             disable the preprocessor\n");
     fprintf(f, "  [ -D <define> ]    add a define\n");
     fprintf(f, "  [ -u ]             ignore for openspin compatibility (unused method elimination always enabled)\n");
-    fprintf(f, "  [ -2# ]             compile for Prop2\n");
-    fprintf(f, "          -2a = original silicon\n");
-    fprintf(f, "          -2b = rev B or rev C silicon\n");
+    fprintf(f, "  [ -2 ]             compile for Prop2\n");
     fprintf(f, "  [ -O# ]            set optimization level:\n");
     fprintf(f, "          -O0 = no optimization\n");
     fprintf(f, "          -O1 = basic optimization\n");
@@ -299,6 +297,9 @@ main(int argc, const char **argv)
             gl_p2 = DEFAULT_P2_VERSION;
             if (argv[0][2] >= 'a' && argv[0][2] <= 'z') {
                 gl_p2 = argv[0][2] - 'a' + 1;
+                if (gl_p2 == 1) {
+                    fprintf(stderr, "warning: -2a option not officially supported\n");
+                }
             }
             argv++; --argc;
         } else if (!strcmp(argv[0], "-h")) {

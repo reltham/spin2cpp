@@ -40,7 +40,7 @@ bool IsDummy(IR *op)
 //
 // replace an opcode
 //
-static void
+void
 ReplaceOpcode(IR *ir, IROpcode op)
 {
   ir->opc = op;
@@ -873,6 +873,12 @@ SafeToReplaceForward(IR *first_ir, Operand *orig, Operand *replace)
       return NULL;
     }
     if (InstrModifies(ir, orig)) {
+        if (ir->src == orig && ir->srceffect != OPEFFECT_NONE) {
+            return NULL;
+        }
+        if (ir->dst == orig && ir->dsteffect != OPEFFECT_NONE) {
+            return NULL;
+        }
         if (ir->cond != COND_TRUE) {
             assignments_are_safe = false;
         }
@@ -1365,6 +1371,9 @@ HasSideEffectsOtherThanReg(IR *ir)
     {
         return true;
     }
+    if (ir->dsteffect != OPEFFECT_NONE || ir->srceffect != OPEFFECT_NONE) {
+        return true;
+    }
     if (InstrSetsAnyFlags(ir)) {
         // if the flags might possibly be used, we have to assume there
         // are side effects
@@ -1396,6 +1405,10 @@ HasSideEffectsOtherThanReg(IR *ir)
     switch (ir->opc) {
     case OPC_GENERIC:
     case OPC_GENERIC_NR:
+    case OPC_LOCKCLR:
+    case OPC_LOCKNEW:
+    case OPC_LOCKRET:
+    case OPC_LOCKSET:
     case OPC_SETQ:
     case OPC_SETQ2:
     case OPC_WAITCNT:
@@ -2179,6 +2192,10 @@ ReplaceZWithNC(IR *ir)
     case OPC_MUXNC:
     case OPC_GENERIC:
     case OPC_GENERIC_NR:
+    case OPC_LOCKNEW:
+    case OPC_LOCKSET:
+    case OPC_LOCKCLR:
+    case OPC_LOCKRET:
     case OPC_SETQ:
     case OPC_SETQ2:
     case OPC_PUSH:
@@ -2326,7 +2343,7 @@ OptimizePeepholes(IRList *irl)
         while (ir_next && IsDummy(ir_next)) {
             ir_next = ir_next->next;
         }
-        if (InstrIsVolatile(ir)) {
+        if (InstrIsVolatile(ir) || ir->srceffect != OPEFFECT_NONE || ir->dsteffect != OPEFFECT_NONE) {
             goto done;
         }
         opc = ir->opc;
@@ -2583,7 +2600,7 @@ OptimizePeepholes(IRList *irl)
         if (ir->opc == OPC_TEST && ir->cond == COND_TRUE)
         {
             IR *previr = FindPrevSetterForReplace(ir, ir->dst);
-            if (previr && previr->opc == OPC_AND && !InstrSetsAnyFlags(previr) && previr->cond == COND_TRUE )
+            if (previr && previr->opc == OPC_AND && !InstrSetsAnyFlags(previr) && previr->cond == COND_TRUE && SameOperand(previr->src, ir->src))
             {
                 if (IsDeadAfter(ir, ir->dst)) {
                     DeleteIR(irl, previr);
@@ -3128,6 +3145,9 @@ restart_check:
             next_ir = next_ir->next;
         }
         if (InstrIsVolatile(ir)) {
+            goto get_next;
+        }
+        if (ir->srceffect != OPEFFECT_NONE || ir->dsteffect != OPEFFECT_NONE) {
             goto get_next;
         }
         if (ir->opc == OPC_RDLONG || ir->opc == OPC_WRLONG) {

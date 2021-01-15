@@ -4,7 +4,7 @@
  * See the file COPYING for terms of use.
  */
 
-/* %define api.prefix {basicyy} */
+%pure-parser
 
 %{
 #include <stdio.h>
@@ -13,6 +13,10 @@
 #include <stdlib.h>
 #include "frontends/common.h"
 #include "frontends/lexer.h"
+
+#define BASICYYSTYPE AST*
+#undef  YYSTYPE
+#define YYSTYPE BASICYYSTYPE
     
 /* Yacc functions */
     void basicyyerror(const char *);
@@ -24,7 +28,6 @@
     extern AST *CommentedListHolder(AST *); // in spin.y
     
 #define YYERROR_VERBOSE 1
-#define YYSTYPE AST*
 
 extern AST *IntegerLabel(AST *);
     
@@ -359,8 +362,6 @@ AdjustParamForByVal(AST *param)
 
 %}
 
-%pure-parser
-
 %token BAS_EMPTY      "_"
 %token BAS_IDENTIFIER "identifier"
 %token BAS_LABEL      "label"
@@ -445,6 +446,7 @@ AdjustParamForByVal(AST *param)
 %token BAS_OUTPUT     "output"
 %token BAS_POINTER    "pointer"
 %token BAS_PRINT      "print"
+%token BAS_PRIVATE    "private"
 %token BAS_PROGRAM    "program"
 %token BAS_PTR        "ptr"
 %token BAS_PUT        "put"
@@ -1093,6 +1095,7 @@ forstmt:
       if (closeident && !AstMatch(ident, closeident)) {
           ERRORHEADER(current->Lptr->fileName, current->Lptr->lineCounter, "error");
           fprintf(stderr, "Wrong variable in next: expected %s, saw %s\n", ident->d.string, closeident->d.string);
+          gl_errors++;
       }
       loop = NewAST(AST_STMTLIST, loop, NULL);
       if (declare) {
@@ -2195,6 +2198,8 @@ operand:
    { $$ = NewAST(AST_EXPRLIST, NewAST(AST_BIGIMMHOLDER, $3, NULL), NULL); }
  | pasmexpr '[' pasmexpr ']'
    { $$ = NewAST(AST_EXPRLIST, NewAST(AST_ARRAYREF, $1, $3), NULL); }
+ | pasmexpr '+' '+'
+   { $$ = NewAST(AST_EXPRLIST, AstOperator(K_INCREMENT, $1, NULL), NULL); } 
 ;
 
 pasmexpr:

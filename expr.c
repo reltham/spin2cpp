@@ -278,16 +278,6 @@ ObjClassName(AST *objtype)
     return P->classname;
 }
 
-const char *
-TypeName(AST *type)
-{
-    if (type->kind == AST_OBJECT) {
-        Module *P = (Module *)type->d.ptr;
-        return P->classname;
-    }
-    return "that type";
-}
-
 /* code to check if a coginit invocation is for a spin method */
 /* if it is, returns a pointer to the method doing the invocation */
 bool
@@ -1646,6 +1636,13 @@ EvalExpr(AST *expr, unsigned flags, int *valid, int depth)
         if (IsGenericType(expr->left)) {
             return rval;
         }
+        /* avoid redundant casts */
+        if (IsFloatType(expr->left) && IsFloatType(rval.type)) {
+            return rval;
+        }
+        if (!IsFloatType(expr->left) && !IsFloatType(rval.type)) {
+            return rval;
+        }
         if (IsFloatType(expr->left)) {
             return convToFloat(rval);
         } else if (IsFloatType(rval.type)) {
@@ -1980,6 +1977,8 @@ int TypeAlignment(AST *typ)
     case AST_GENERICTYPE:
     case AST_FLOATTYPE:
         return EvalConstExpr(typ->left);
+    case AST_VOIDTYPE:
+        return LONG_SIZE; // "void" type is used for res statements
     default:
         ERROR(typ, "Internal error: unknown type %d passed to TypeAlignment",
               typ->kind);
@@ -2375,6 +2374,9 @@ ExprTypeRelative(SymbolTable *table, AST *expr, Module *P)
             lab = (Label *)sym->val;
             typ = lab->type;
             if (curfunc && IsSpinLang(curfunc->language) && typ && typ->kind != AST_ARRAYTYPE) {
+                if (typ == ast_type_void) {
+                    return typ;
+                }
                 return NewAST(AST_ARRAYTYPE, typ, AstInteger(1));
             }
             return typ;
@@ -2441,6 +2443,10 @@ ExprTypeRelative(SymbolTable *table, AST *expr, Module *P)
                 }
                 if (typexpr && typexpr->kind == AST_FUNCTYPE) {
                     return typexpr->left;
+                }
+                if ( (IsArrayType(typexpr) || IsPointerType(typexpr)) && curfunc && IsBasicLang(curfunc->language)) {
+                    // in BASIC we may not have converted x(i) into an array reference yet
+                    return BaseType(typexpr);
                 }
                 ERROR(expr, "Object called is not a function");
                 break;
@@ -2975,7 +2981,7 @@ BuildExprlistFromObject(AST *origexpr, AST *typ)
     int n;
 
     /* chase down any expression statements */
-    while ((expr->kind == AST_STMTLIST)) {
+    while (expr->kind == AST_STMTLIST || expr->kind == AST_SEQUENCE) {
         if (expr->right) {
             exprptr = &expr->right;
         } else {
@@ -2983,9 +2989,9 @@ BuildExprlistFromObject(AST *origexpr, AST *typ)
         }
         expr = *exprptr;
     }
-    if (!expr || expr->kind == AST_EXPRLIST) {
+    if (!expr || expr->kind == AST_EXPRLIST || expr->kind == AST_FUNCCALL) {
         /* already an expression list */
-        return expr;
+        return origexpr;
     }
     exprlist = NULL;
     if (!IsClassType(typ)) {
@@ -3315,4 +3321,143 @@ AggregateCount(AST *typ)
     }
     ERROR(typ, "Internal error, expected aggregate type in AggregateCount");
     return 1;
+}
+
+/* utility: construct a name for a type */
+const char *TypeName(AST *typ)
+{
+    static char buf[512];
+    int size;
+    int lang;
+    int isUnsigned = 0;
+    AST *nexttyp;
+
+    buf[0] = 0;
+    if (!typ) {
+        return "generic type";
+    }
+    if (curfunc) {
+        lang = curfunc->language;
+    } else if (current) {
+        lang = current->curLanguage;
+    } else {
+        lang = LANG_DEFAULT;
+    }
+    while (typ) {
+        if (typ == ast_type_string) {
+            strcat(buf, "string");
+            nexttyp = NULL;
+        }
+        if (typ == ast_type_void) {
+            strcat(buf, "void");
+            nexttyp = NULL;
+        }
+        nexttyp = typ->left;
+        switch (typ->kind) {
+        case AST_MODIFIER_SEND_ARGS:
+            break;
+        case AST_MODIFIER_CONST:
+            strcat(buf, "const ");
+            break;
+        case AST_MODIFIER_VOLATILE:
+            strcat(buf, "volatile ");
+            break;
+        case AST_FUNCTYPE:
+            strcat(buf, "function returning ");
+            break;
+        case AST_ARRAYTYPE:
+            strcat(buf, "array of ");
+            break;
+        case AST_PTRTYPE:
+            strcat(buf, "pointer to ");
+            break;
+        case AST_REFTYPE:
+            strcat(buf, "reference to ");
+            break;
+        case AST_GENERICTYPE:
+            strcat(buf, "any");
+            break;
+        case AST_UNSIGNEDTYPE:
+            isUnsigned = 1;
+            /* fall through */
+        case AST_INTTYPE:
+            size = EvalPasmExpr(typ->left);
+            switch (size) {
+            case 1:
+                if (!isUnsigned) {
+                    strcat(buf, "signed ");
+                }
+                if (IsCLang(lang)) {
+                    strcat(buf, "char");
+                } else {
+                    strcat(buf, "byte");
+                }
+                break;
+            case 2:
+                if (IsSpinLang(lang)) {
+                    if (!isUnsigned) {
+                        strcat(buf, "signed ");
+                    } else {
+                        if (isUnsigned) {
+                            strcat(buf, "unsigned ");
+                        }
+                    }
+                }
+                if (IsCLang(lang)) {
+                    strcat(buf, "short");
+                } else {
+                    strcat(buf, "word");
+                }
+                break;
+            case 8:
+                if (isUnsigned) {
+                    strcat(buf, "unsigned ");
+                }
+                strcat(buf, "64 bit integer");
+                break;
+            default:
+                if (isUnsigned) {
+                    strcat(buf, "unsigned ");
+                }
+                if (IsCLang(lang)) {
+                    strcat(buf, "int");
+                } else if (IsSpinLang(lang)) {
+                    strcat(buf, "long");
+                } else {
+                    strcat(buf, "integer");
+                }
+                break;
+            }
+            nexttyp = NULL;
+            break;
+        case AST_FLOATTYPE:
+            size = EvalPasmExpr(typ->left);
+            switch (size) {
+            case 8:
+                strcat(buf, "double precision float");
+                break;
+            default:
+                strcat(buf, "single precision float");
+                break;
+            }
+            nexttyp = NULL;
+            break;
+        case AST_TUPLE_TYPE:
+            strcat(buf, "multiple values");
+            break;
+        case AST_OBJECT:
+        {
+            Module *P = GetClassPtr(typ);
+            strcat(buf, P->classname);
+            nexttyp = NULL;
+            break;
+        }
+        default:
+            strcat(buf, "type");
+            nexttyp = NULL;
+            break;
+        }
+        typ = nexttyp;
+    }
+    return strdup(buf);
 }

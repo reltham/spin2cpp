@@ -249,6 +249,26 @@ pri __builtin_inf : r=float
 pri __builtin_nan(p) : r=float
   return $7fc00000
 
+pri _lockmem(addr) | oldlock, oldmem
+  '''_tx("L")
+  '''_gc_errhex(addr)
+  repeat
+    repeat
+      oldlock := _lockset(__lockreg)
+    while oldlock
+    oldmem := byte[addr]
+    '''_tx("g")
+    '''_gc_errhex(oldmem)
+    if oldmem == 0
+      byte[addr] := 1
+    _lockclr(__lockreg)
+  while oldmem <> 0
+
+pri _unlockmem(addr) | oldlock
+  '''_tx("u")
+  '''_gc_errhex(addr)
+  byte[addr] := 0
+    
 pri _pinwrite(pingrp, val) | mask, basepin, reg
   basepin := pingrp & $1f
   reg := pingrp & $20
@@ -350,19 +370,23 @@ pri file "libsys/strings.bas" decuns`$(x, n=0): r=string
 pri file "libsys/strings.bas" hex`$(x, n=0): r=string
 pri file "libsys/strings.bas" oct`$(x, n=0): r=string
 
-pri file "libsys/stringlibp2.bas" delete`$(t,o,n): r=string
-pri file "libsys/stringlibp2.bas" insert`$(x,y,p): r=string
-pri file "libsys/stringlibp2.bas" lcase`$(x): r=string
-pri file "libsys/stringlibp2.bas" lpad`$(x, w, ch): r=string
-pri file "libsys/stringlibp2.bas" ltrim`$(x): r=string
-pri file "libsys/stringlibp2.bas" reverse`$(x): r=string
-pri file "libsys/stringlibp2.bas" rpad`$(x, w, ch): r=string
-pri file "libsys/stringlibp2.bas" rtrim`$(x): r=string
+pri file "libsys/stringlibp2.bas" delete`$(t=string,o,n): r=string
+pri file "libsys/stringlibp2.bas" insert`$(x=string,y=string,p=0): r=string
+pri file "libsys/stringlibp2.bas" lcase`$(x=string): r=string
+pri file "libsys/stringlibp2.bas" lpad`$(x=string, w, ch=string): r=string
+pri file "libsys/stringlibp2.bas" ltrim`$(s=string): r=string
+pri file "libsys/stringlibp2.bas" reverse`$(x=string): r=string
+pri file "libsys/stringlibp2.bas" rpad`$(x=string, w, ch=string): r=string
+pri file "libsys/stringlibp2.bas" rtrim`$(s=string): r=string
 pri file "libsys/stringlibp2.bas" space`$(n): r=string
 pri file "libsys/stringlibp2.bas" string`$(n, x): r=string
-pri file "libsys/stringlibp2.bas" ucase`$(x): r=string
+pri file "libsys/stringlibp2.bas" trim`$(s=string): r=string
+pri file "libsys/stringlibp2.bas" ucase`$(x=string): r=string
 pri file "libsys/stringlibp2.bas" _instr(off, x, y): r=long
 pri file "libsys/stringlibp2.bas" _instrrev(off, x, y): r=long
 
+pri file "libc/stdlib/errno.c" _seterror(r)
+pri file "libc/stdlib/errno.c" _geterror(): r=long
+pri file "libc/stdlib/errno.c" _geterrnoptr(): r=@long
 
 pri file "libsys/c_startup.c" _c_startup()
